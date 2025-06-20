@@ -1,2 +1,18 @@
 @import "tailwindcss";
 @plugin "daisyui";
+@plugin "daisyui/theme" {
+  name: "mytheme";
+
+  default: true;
+  prefersdark: false;
+
+  color-scheme: light;
+  --color-base-100: oklch(100% 0 0 / .5);
+  --color-base-200: oklch(98% 0 0 / .5);
+  --color-base-300: oklch(95% 0 0 / .5);
+}
+
+body,
+#root {
+  @apply w-screen h-screen overflow-hidden bg-stone-100;
+}

@@ -36,13 +36,13 @@ export async function downloadAllModels(progress?: ProgressReporter) {
     const cachedKeys = await listAllKeys()
     const missingModels = allModels.filter(url => !cachedKeys.includes(url))
 
-    for (const url of missingModels) {
+    for (const [index, url] of missingModels.entries()) {
       const fileName = getModelFileName(url)
 
-      progress?.(`Downloading ${fileName}...`)
+      progress?.(`Downloading ${fileName} (${index + 1}/${missingModels.length})`)
 
       const blob = await downloadWithProgress(url, p => {
-        progress?.(`Downloading ${fileName}...`, p * 100)
+        progress?.(`Downloading ${fileName} (${index + 1}/${missingModels.length})`, p * 100)
       })
 
       progress?.(`Saving ${fileName} to indexedDB...`)

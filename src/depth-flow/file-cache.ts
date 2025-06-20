@@ -1,5 +1,5 @@
 import { openDB, type DBSchema } from "idb"
-import { lazy } from "./utils"
+import { lazyPromise } from "./utils"
 
 
 const dbName = "depth-flow-web"
@@ -57,7 +57,13 @@ interface CacheDbSchema extends DBSchema {
 }
 
 
-const getDb = lazy(() => openDB<CacheDbSchema>(dbName))
+const getDb = lazyPromise(() => openDB<CacheDbSchema>(dbName, 1, {
+  upgrade(db, oldVersion, newVersion, transaction) {
+    if (oldVersion < 1) {
+      db.createObjectStore(storeName)
+    }
+  }
+}))
 
 
 export async function listAllKeys() {
@@ -81,7 +87,7 @@ export async function saveCachedFile(url: string, blob: Blob) {
     url,
     size: blob.size,
     blob
-  })
+  }, url)
 }
 
 

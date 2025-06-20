@@ -2,11 +2,41 @@
 export type ProgressReporter = (step: string, /** 0 ~ 100 */ progress?: number) => void
 
 
+export function delay(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+
+export function frame() {
+  return new Promise(resolve => requestAnimationFrame(resolve))
+}
+
+
+export function never() {
+  return new Promise(() => { })
+}
+
+
 export function lazy<T>(fn: () => T) {
   let created = false, value: T
   return () => {
     if (!created) {
       value = fn()
+      created = true
+    }
+    return value
+  }
+}
+
+
+export function lazyPromise<T>(fn: () => Promise<T>) {
+  let created = false, value: Promise<T>
+  return () => {
+    if (!created) {
+      value = fn()
+      value.catch(() => {
+        created = false
+      })
       created = true
     }
     return value
