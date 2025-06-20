@@ -1,37 +1,90 @@
 import clsx from "clsx"
+import { useEffect } from "react"
 import { motion } from "motion/react"
-import { signal, useSignal } from "@preact/signals-react"
+import { signal } from "@preact/signals-react"
 import { useDropzone } from "react-dropzone"
-import { humanSize, useAsyncState } from "./utils"
+import { setBackground } from "../Canvas/Background"
+import { humanSize, asyncState } from "./utils"
 import { checkAllModelsCached, downloadAllModels } from "../depth-flow/models/cache"
-import { setBackground } from "../Canvas"
-import { createMultilayerFlow, createSimpleFlow } from "../depth-flow/create-flow"
-import { downloadFile } from "../depth-flow/utils"
+// import { createMultilayerFlow, createSimpleFlow } from "../depth-flow/create-flow"
+import { downloadFile, lazy } from "../depth-flow/utils"
+import { setRenderer } from "../Canvas/Renderer"
+
+
+const createFlowModule = lazy(() => import("../depth-flow/create-flow"))
 
 
 
-function Download({ checkAgain }: { checkAgain: () => void }) {
-  const progress = useSignal<[string, number | undefined]>()
+// model cache state
 
-  const { run: downloadModels, loading: downloading, error } = useAsyncState(downloadAllModels)
+const {
+  data: allModelsCached,
+  fetch: checkModelsAgain,
+} = asyncState(checkAllModelsCached)
 
+
+// download state
+
+const downloadProgress = signal<[string, number | undefined]>()
+
+const {
+  fetch: downloadModels,
+  loading: downloading,
+  error: downloadError,
+  reset: resetDownload,
+} = asyncState(downloadAllModels)
+
+
+// create flow state
+
+const selectedImage = signal<File | null>(null)
+
+const createProgress = signal<[string, number | undefined]>()
+
+const {
+  data: flowFile,
+  fetch: createDepthFlow,
+  loading: creatingFlow,
+  error: createError,
+  reset: resetCreate,
+} = asyncState(async (isSimple: boolean, file: File) => {
+  const { createSimpleFlow, createMultilayerFlow } = await createFlowModule()
+  if (isSimple)
+    return createSimpleFlow(file, (message, p) => createProgress.value = [message, p])
+  return createMultilayerFlow(file, (message, p) => createProgress.value = [message, p])
+})
+
+const reset = () => {
+  resetCreate()
+  createProgress.value = undefined
+  selectedImage.value = null
+}
+
+
+// components
+
+function Download() {
   const confirmDownload = () => {
-    if (!downloading) {
-      downloadModels((message, value) => progress.value = [message, value])
-        .then(checkAgain)
+    if (!downloading.value) {
+      downloadModels((message, value) => downloadProgress.value = [message, value])
+        .then(checkModelsAgain)
     }
   }
-
-  if (error) {
-    return (
+  if (downloadError.value) {
+    return <>
       <div className="alert alert-soft alert-error">
-        {error.message}
+        {downloadError.value.message}
       </div>
-    )
+      <div
+        className="btn btn-soft btn-secondary w-full"
+        onClick={resetDownload}
+      >
+        Retry
+      </div>
+    </>
   }
-
-  if (progress.value) {
-    const [message, value] = progress.value
+  if (downloading.value) {
+    const [message, value] = downloadProgress.value || ["Downloading models", undefined]
     return <>
       <div className="alert alert-soft alert-primary">
         {message}
@@ -39,7 +92,6 @@ function Download({ checkAgain }: { checkAgain: () => void }) {
       <progress className="progress progress-info w-full" value={value} max="100"></progress>
     </>
   }
-
   return <>
     <p>
       Create a new depth flow requires downloading and caching several AI models (~400MB).
@@ -53,36 +105,20 @@ function Download({ checkAgain }: { checkAgain: () => void }) {
 
 
 
-const image = signal<File | null>(null)
-
 function CreateFlow() {
 
-  const progress = useSignal<[string, number | undefined]>()
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragAccept, isDragReject } = useDropzone({
     accept: {
       "image/*": [".png", ".jpg", ".jpeg", ".webp"],
     },
     onDrop: (files) => {
-      image.value = files[0]
-      setBackground(files[0])
+      selectedImage.value = files[0] || null
+      setBackground(selectedImage.value)
+      setRenderer(undefined)
     },
   })
 
-  const { data: flow, run: createDepthFlow, loading: creating, error: createError, reset: resetCreate } = useAsyncState(
-    (isSimple: boolean, file: File) => {
-      if (isSimple)
-        return createSimpleFlow(file, (message, p) => progress.value = [message, p])
-      return createMultilayerFlow(file, (message, p) => progress.value = [message, p])
-    }
-  )
-
-  const reset = () => {
-    resetCreate()
-    progress.value = undefined
-    image.value = null
-  }
-
+  const flow = flowFile.value
   if (flow) {
     return <>
       <div className="alert alert-soft alert-primary">
@@ -104,11 +140,10 @@ function CreateFlow() {
       </div>
     </>
   }
-
-  if (createError) {
+  if (createError.value) {
     return <>
       <div className="alert alert-soft alert-error">
-        {createError.message}
+        {createError.value.message}
       </div>
       <div
         className="btn btn-soft btn-primary w-full"
@@ -118,10 +153,8 @@ function CreateFlow() {
       </div>
     </>
   }
-
-
-  if (creating || progress.value) {
-    const [message, value] = progress.value || ["Creating flow", undefined]
+  if (creatingFlow.value) {
+    const [message, value] = createProgress.value || ["Creating flow", undefined]
     return <>
       <div className="alert alert-soft alert-primary">
         {message}
@@ -129,19 +162,16 @@ function CreateFlow() {
       <progress className="progress progress-info w-full" value={value} max="100"></progress>
     </>
   }
-
-
-  if (image.value) {
+  if (selectedImage.value) {
     return <>
-      {/* TODO: show image */}
       <div className="alert alert-soft alert-primary text-center break-all">
-        {image.value.name} ({humanSize(image.value.size)})
+        {selectedImage.value.name} ({humanSize(selectedImage.value.size)})
       </div>
       <div
         className="btn btn-soft btn-primary w-full"
         onClick={() => {
-          if (!image.value) return
-          createDepthFlow(true, image.value)
+          if (!selectedImage.value) return
+          createDepthFlow(true, selectedImage.value)
         }}
       >
         Create Simple Depth Flow
@@ -149,8 +179,8 @@ function CreateFlow() {
       <div
         className="btn btn-soft btn-primary w-full"
         onClick={() => {
-          if (!image.value) return
-          createDepthFlow(false, image.value)
+          if (!selectedImage.value) return
+          createDepthFlow(false, selectedImage.value)
         }}
       >
         Create Multilayer Depth Flow
@@ -164,12 +194,12 @@ function CreateFlow() {
     </>
   }
 
-
   return <>
     <div
       className={clsx(
         "btn btn-dash btn-primary w-full h-36 mx-auto",
-        isDragActive && "bg-primary/20"
+        isDragAccept && "bg-primary/20",
+        isDragReject && "bg-error/20",
       )}
       {...getRootProps()}
     >
@@ -186,7 +216,9 @@ function CreateFlow() {
 
 export function Create() {
 
-  const { data: allModelsCached, run: checkAgain } = useAsyncState(checkAllModelsCached, [])
+  useEffect(() => {
+    checkModelsAgain()
+  }, [])
 
   return (
     <motion.div
@@ -195,8 +227,8 @@ export function Create() {
       animate={{ filter: "blur(0px)", opacity: 1 }}
       exit={{ filter: "blur(4px)", opacity: 0, z: -1 }}
     >
-      {allModelsCached === false && <Download checkAgain={checkAgain} />}
-      {allModelsCached === true && <CreateFlow />}
+      {allModelsCached.value === false && <Download />}
+      {allModelsCached.value === true && <CreateFlow />}
     </motion.div>
   )
 }

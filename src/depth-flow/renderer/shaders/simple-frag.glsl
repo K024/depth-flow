@@ -81,8 +81,7 @@ void ray_marching(vec3 near_point, vec3 far_point, out vec4 final_color, out vec
     bool is_in_depth = pos.z > depth;
     if(is_in_depth) { // we reached the depth boundary
       vec3 pos = ray_marching_backward(near_point, far_point, backward_step_size, depth_map, walk);
-      vec4 color = position_color(image, pos);
-      current_color = color;
+      current_color = position_color(image, pos);
       break;
     }
   }

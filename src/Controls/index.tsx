@@ -10,6 +10,8 @@ const tabs = ["Flow", "Create", "Settings"] as const
 
 const currentTab = signal<typeof tabs[number]>(tabs[0])
 
+const hideControls = signal(false)
+
 
 function Tabs() {
   return (
@@ -44,7 +46,7 @@ function TabContent() {
 }
 
 
-export function Settings() {
+function ControlsContent() {
   return (
     <motion.div
       className={clsx(
@@ -54,12 +56,43 @@ export function Settings() {
       initial={{ x: "120%", y: "-50%" }}
       animate={{ x: "0%", y: "-50%" }}
       exit={{ x: "120%", y: "-50%" }}
-      transition={{ duration: 0.8, type: "spring" }}
+      transition={{ duration: 0.8, type: "spring", bounce: 0.2 }}
     >
       <Tabs />
       <div className="flex-1 relative overflow-hidden z-0">
         <TabContent />
       </div>
+      <div
+        className="btn btn-soft text-black/30 rounded-t-none"
+        onClick={() => hideControls.value = true}>
+        Hide Control Panel
+      </div>
     </motion.div>
+  )
+}
+
+
+function ShowControlsButton() {
+  return (
+    <motion.div
+      className="fixed bottom-8 right-8 btn btn-circle text-black/30"
+      initial={{ x: "6rem" }}
+      animate={{ x: "0" }}
+      exit={{ x: "6rem" }}
+      transition={{ duration: 0.8, type: "spring", bounce: 0.2 }}
+      onClick={() => hideControls.value = false}
+    >
+      ◀
+    </motion.div>
+  )
+}
+
+
+export function Controls() {
+  return (
+    <AnimatePresence>
+      {!hideControls.value && <ControlsContent key="controls" />}
+      {hideControls.value && <ShowControlsButton key="show-controls" />}
+    </AnimatePresence>
   )
 }

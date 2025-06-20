@@ -1,10 +1,11 @@
 import { error, frame, lazyPromise, type ProgressReporter } from "./utils"
 import { getCachedFile } from "./file-cache"
 import type { FlowSimple } from "./types"
-import { depthModelUrl, getDepthModelSession, inferDepthModelSession, resizeImageForDepthModel } from "./models/depth"
-import { getInpaintModelSession, inpaintModelUrl } from "./models/inpaint"
+import { getDepthModelSession, inferDepthModelSession, resizeImageForDepthModel } from "./models/depth"
+import { getInpaintModelSession } from "./models/inpaint"
 import { getImageData, loadImageFromBlob, saveImageData, scaleImageData } from "./image/utils"
 import { tensorFromImageData, tensorToGrayscaleImageData } from "./models/tensor"
+import { depthModelUrl, inpaintModelUrl } from "./models/cache"
 import { saveFlowZip } from "./flow-file"
 
 

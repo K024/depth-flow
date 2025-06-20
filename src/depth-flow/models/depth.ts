@@ -2,9 +2,6 @@ import { ort } from "./ort"
 import { scaleImageData } from "../image/utils"
 
 
-export const depthModelUrl = `https://huggingface.co/onnx-community/depth-anything-v2-base/resolve/d13a228/onnx/model_fp16.onnx?download=true`
-
-
 export async function getDepthModelSession(blob: Blob) {
   const session = await ort.InferenceSession.create(
     await blob.arrayBuffer(),

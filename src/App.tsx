@@ -1,13 +1,13 @@
 import { MotionConfig } from "motion/react"
 import { Canvas } from "./Canvas"
-import { Settings } from "./Settings"
+import { Controls } from "./Controls"
 
 
 export function App() {
   return (
     <MotionConfig transition={{ duration: 0.3 }}>
       <Canvas />
-      <Settings />
+      <Controls />
     </MotionConfig>
   )
 }

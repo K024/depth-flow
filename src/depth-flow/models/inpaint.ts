@@ -2,9 +2,6 @@ import { ort } from "./ort"
 import { scaleImageData } from "../image/utils"
 
 
-export const inpaintModelUrl = `https://huggingface.co/Carve/LaMa-ONNX/resolve/c3c0c9e/lama_fp32.onnx?download=true`
-
-
 export async function getInpaintModelSession(blob: Blob) {
   const session = await ort.InferenceSession.create(
     await blob.arrayBuffer(),
