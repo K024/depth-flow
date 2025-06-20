@@ -27,6 +27,16 @@ export function loadImage(url: string) {
 }
 
 
+export async function loadImageFromBlob(blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  try {
+    return await loadImage(url)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+
 export function getImageData(image: HTMLImageElement) {
   if (!image.complete) {
     throw new Error("Image is not loaded")
