@@ -5,6 +5,9 @@ export interface FlowSimpleConfig {
   originalDepthMap: string
   width: number
   height: number
+
+  processedBy: string
+  processArgs: Record<string, any>
 }
 
 
@@ -20,8 +23,10 @@ export interface FlowMultilayerConfig {
   layers: {
     image: string
     depthMap: string
-    depth: number
   }[]
+
+  processedBy: string
+  processArgs: Record<string, any>
 }
 
 export type FlowConfig = FlowSimpleConfig | FlowMultilayerConfig
@@ -32,6 +37,9 @@ export interface FlowSimple {
   originalDepthMap: Blob
   width: number
   height: number
+
+  processedBy: string
+  processArgs: Record<string, any>
 }
 
 
@@ -42,13 +50,15 @@ export interface FlowMultilayer {
   height: number
 
   inpaintLayers: number
-  inpaintBreakpoints: number[]
+  inpaintDivisionPoints: number[]
 
   layers: {
     image: Blob
     depthMap: Blob
-    depth: number
   }[]
+
+  processedBy: string
+  processArgs: Record<string, any>
 }
 
 export type Flow = FlowSimple | FlowMultilayer

@@ -7,7 +7,11 @@ const dbName = "depth-flow-web"
 const storeName = "file-cache"
 
 
-type ProgressCallback = (progress: number) => void
+type ProgressCallback = (progress: {
+  loaded: number
+  total: number
+  percent: number
+}) => void
 
 export async function downloadWithProgress(url: string, callback?: ProgressCallback) {
   const response = await fetch(url)
@@ -32,7 +36,11 @@ export async function downloadWithProgress(url: string, callback?: ProgressCallb
     loaded += value.length
 
     if (callback && total) {
-      callback(loaded / total)
+      callback({
+        loaded,
+        total,
+        percent: loaded / total * 100
+      })
     }
   }
 

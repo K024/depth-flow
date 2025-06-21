@@ -3,13 +3,14 @@ import { scaleImageData } from "../image/utils"
 
 
 export async function getDepthModelSession(blob: Blob) {
+  console.log("getDepthModelSession")
   const session = await ort.InferenceSession.create(
     await blob.arrayBuffer(),
     {
       executionProviders: [
         "webgpu",
         "wasm",
-      ]
+      ],
     }
   )
   return session

@@ -23,13 +23,15 @@ export async function loadFlowZip(zipFile: Blob): Promise<Flow> {
       height: config.height,
 
       inpaintLayers: config.inpaintLayers,
-      inpaintBreakpoints: config.inpaintBreakpoints,
+      inpaintDivisionPoints: config.inpaintBreakpoints,
 
       layers: config.layers.map(layer => ({
         image: ensureBlob(blobs, layer.image),
         depthMap: ensureBlob(blobs, layer.depthMap),
-        depth: layer.depth,
       })),
+
+      processedBy: config.processedBy,
+      processArgs: config.processArgs,
     }
 
     return flow
@@ -41,6 +43,9 @@ export async function loadFlowZip(zipFile: Blob): Promise<Flow> {
       originalDepthMap: ensureBlob(blobs, config.originalDepthMap),
       width: config.width,
       height: config.height,
+
+      processedBy: config.processedBy,
+      processArgs: config.processArgs,
     }
 
     return flow
@@ -60,13 +65,15 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
       height: flow.height,
 
       inpaintLayers: flow.inpaintLayers,
-      inpaintBreakpoints: flow.inpaintBreakpoints,
+      inpaintBreakpoints: flow.inpaintDivisionPoints,
 
       layers: flow.layers.map((layer, index) => ({
         image: `layer-${index + 1}.png`,
         depthMap: `layer-${index + 1}-depth-map.png`,
-        depth: layer.depth,
       })),
+
+      processedBy: flow.processedBy,
+      processArgs: flow.processArgs,
     }
   } else {
     config = {
@@ -74,6 +81,9 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
       originalDepthMap: `depth-map.png`,
       width: flow.width,
       height: flow.height,
+
+      processedBy: flow.processedBy,
+      processArgs: flow.processArgs,
     }
   }
 

@@ -1,5 +1,5 @@
 import type { FlowSimple } from "../types"
-import { dilateImageData, getImageData, loadImageFromBlob } from "../image/utils"
+import { loadImageFromBlob } from "../image/utils"
 import { calculateZoomScale, createFrameTimeCounter, createPlaneShaderProgram } from "./common"
 import fragSrc from "./shaders/simple-frag.glsl?raw"
 
@@ -27,13 +27,8 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
   const originalImage = await loadImageFromBlob(flow.originalImage)
   const originalDepthMap = await loadImageFromBlob(flow.originalDepthMap)
 
-  const originalDepthMapData = getImageData(originalDepthMap)
-
-  let depthMapDilateRadius = 4
-
-  let imageTexture = createTexture(originalImage)
-  let depthMapTexture = createTexture(await dilateImageData(originalDepthMapData, depthMapDilateRadius))
-
+  const imageTexture = createTexture(originalImage)
+  const depthMapTexture = createTexture(originalDepthMap)
 
   const frameTimeCounter = createFrameTimeCounter()
 
@@ -59,17 +54,8 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
   }
 
 
-  async function updateDepthMapDilate(dilateRadius: number) {
-    depthMapDilateRadius = dilateRadius
-    const dilatedDepthMap = await dilateImageData(originalDepthMapData, dilateRadius)
-    depthMapTexture = createTexture(dilatedDepthMap)
-  }
-
-
   return {
     render,
-    getDepthMapDilateRadius: () => depthMapDilateRadius,
-    updateDepthMapDilate,
     frameTimeCounter,
   }
 }

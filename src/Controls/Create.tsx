@@ -4,15 +4,15 @@ import { motion } from "motion/react"
 import { signal } from "@preact/signals-react"
 import { useDropzone } from "react-dropzone"
 import { setBackground } from "../Canvas/Background"
+import { setRenderer } from "../Canvas/Renderer"
+import { depthMapDilateRadius, layerDepthMapDilateRadius } from "./Settings"
 import { humanSize, asyncState } from "./utils"
 import { checkAllModelsCached, downloadAllModels } from "../depth-flow/models/cache"
 // import { createMultilayerFlow, createSimpleFlow } from "../depth-flow/create-flow"
 import { downloadFile, lazy } from "../depth-flow/utils"
-import { setRenderer } from "../Canvas/Renderer"
 
 
 const createFlowModule = lazy(() => import("../depth-flow/create-flow"))
-
 
 
 // model cache state
@@ -49,9 +49,23 @@ const {
   reset: resetCreate,
 } = asyncState(async (isSimple: boolean, file: File) => {
   const { createSimpleFlow, createMultilayerFlow } = await createFlowModule()
-  if (isSimple)
-    return createSimpleFlow(file, (message, p) => createProgress.value = [message, p])
-  return createMultilayerFlow(file, (message, p) => createProgress.value = [message, p])
+  if (isSimple) {
+    return createSimpleFlow(
+      file,
+      {
+        depthMapDilateRadius: depthMapDilateRadius.value,
+      },
+      (message, p) => createProgress.value = [message, p]
+    )
+  }
+  return createMultilayerFlow(
+    file,
+    {
+      depthMapDilateRadius: depthMapDilateRadius.value,
+      layerDepthMapDilateRadius: layerDepthMapDilateRadius.value,
+    },
+    (message, p) => createProgress.value = [message, p]
+  )
 })
 
 const reset = () => {

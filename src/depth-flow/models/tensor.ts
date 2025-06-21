@@ -38,7 +38,7 @@ export function tensorFromImageData(imageData: ImageData, normalize = true) {
 
 
 /**
- * rgba image => float32[n h w]
+ * rgba image => float32[n 1 h w]
  */
 export function tensorFromImageDataChannel(imageData: ImageData, channel: "r" | "g" | "b" | "a", normalize = false) {
   const channelIndex = "rgba".indexOf(channel)
@@ -70,9 +70,12 @@ export function tensorFromImageDataChannel(imageData: ImageData, channel: "r" | 
 /**
  * float32[n h w] => grayscale image
  */
-export function tensorToGrayscaleImageData(tensor: ort.TypedTensor<"float32">) {
+export function tensorToGrayscaleImageData(tensor: ort.TypedTensor<"float32">, normalize = true) {
   if (tensor.dims.length !== 3 || tensor.dims[0] !== 1) {
     throw new Error("Unexpected size")
+  }
+  if (!normalize) {
+    throw new Error("Grayscale image must be normalized")
   }
 
   const depthData = tensor.data

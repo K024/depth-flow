@@ -71,16 +71,26 @@ export function cloneImageData(imageData: ImageData) {
 }
 
 
-export async function scaleImageData(imageData: ImageData, width: number, height: number, resizeQuality: ResizeQuality = "high") {
+export async function scaleImageData(imageData: ImageData, width: number, height: number, resizeQuality: ImageSmoothingQuality = "high") {
   const { ctx } = getCanvas(width, height)
 
-  const imageBitmap = await createImageBitmap(imageData, {
-    resizeWidth: width,
-    resizeHeight: height,
-    resizeQuality,
-  })
+  // const imageBitmap = await createImageBitmap(imageData, {
+  //   resizeWidth: width,
+  //   resizeHeight: height,
+  //   resizeQuality,
+  // })
 
-  ctx.drawImage(imageBitmap, 0, 0)
+  // ctx.drawImage(imageBitmap, 0, 0)
+
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = resizeQuality
+  const imageBitmap = await createImageBitmap(imageData)
+  ctx.drawImage(
+    imageBitmap,
+    0, 0, imageData.width, imageData.height,
+    0, 0, width, height,
+  )
+
   const scaledImageData = ctx.getImageData(0, 0, width, height)
 
   return scaledImageData
@@ -178,4 +188,37 @@ export async function writeImageDataChannel(source: ImageData, sourceChannel: "r
   }
 
   return target
+}
+
+
+export async function invertImageData(imageData: ImageData) {
+  const { width, height, data } = imageData
+  const output = new ImageData(width, height)
+
+  for (let i = 0; i < data.length; i += 4) {
+    output.data[i] = 255 - data[i]         // R
+    output.data[i + 1] = 255 - data[i + 1] // G 
+    output.data[i + 2] = 255 - data[i + 2] // B
+    output.data[i + 3] = data[i + 3]       // A (copy)
+  }
+
+  return output
+}
+
+
+export async function alphaBlend(back: ImageData, ...fronts: ImageData[]) {
+  for (const front of fronts) {
+    if (back.width !== front.width || back.height !== front.height) {
+      throw new Error("Back and front images must have the same dimensions")
+    }
+  }
+
+  const { canvas, ctx } = getCanvas(back.width, back.height)
+
+  ctx.drawImage(await createImageBitmap(back), 0, 0)
+  for (const front of fronts) {
+    ctx.drawImage(await createImageBitmap(front), 0, 0)
+  }
+
+  return ctx.getImageData(0, 0, canvas.width, canvas.height)
 }

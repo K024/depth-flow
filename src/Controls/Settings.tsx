@@ -1,4 +1,10 @@
+import { signal } from "@preact/signals-react"
 import { motion } from "motion/react"
+
+
+export const depthMapDilateRadius = signal(4)
+
+export const layerDepthMapDilateRadius = signal(4)
 
 
 export function InnerSettings() {

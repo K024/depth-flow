@@ -14,4 +14,11 @@ export default defineConfig({
     }),
     tailwindcss(),
   ],
+  server: {
+    // required headers for SharedArrayBuffer
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    }
+  },
 })
