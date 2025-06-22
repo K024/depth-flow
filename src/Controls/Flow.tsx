@@ -118,6 +118,9 @@ function CreateFlowRenderer() {
         {...getInputProps()}
       />
     </div>
+    <div>
+      A new flow file can be created using an image under the Create tab
+    </div>
   </>
 }
 

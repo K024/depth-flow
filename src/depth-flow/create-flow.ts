@@ -109,6 +109,7 @@ export interface MultilayerFlowArgs {
   layerDepthMapDilateRadius?: number
   layerDepthMapBlurRadius?: number
   layerDisplayMaskBlurRadius?: number
+  boundOverlap?: number
 }
 
 export async function createMultilayerFlow(image: Blob, args?: MultilayerFlowArgs, progress?: ProgressReporter): Promise<File> {
@@ -120,6 +121,7 @@ export async function createMultilayerFlow(image: Blob, args?: MultilayerFlowArg
     layerDepthMapDilateRadius: clip(args?.layerDepthMapDilateRadius ?? 6, 0, 10),
     layerDepthMapBlurRadius: clip(args?.layerDepthMapBlurRadius ?? 2, 0, 10),
     layerDisplayMaskBlurRadius: clip(args?.layerDisplayMaskBlurRadius ?? 2, 0, 10),
+    boundOverlap: clip(args?.boundOverlap ?? 4, 0, 10),
   }
 
   const {
@@ -146,7 +148,10 @@ export async function createMultilayerFlow(image: Blob, args?: MultilayerFlowArg
   await frame()
 
   const layers: FlowMultilayer["layers"] = []
-  for (const [index, [lowerBound, upperBound]] of layerBounds.entries()) {
+  for (const [index, bounds] of layerBounds.entries()) {
+
+    const lowerBound = bounds[0] - normalizedArgs.boundOverlap
+    const upperBound = bounds[1] + normalizedArgs.boundOverlap
 
     if (upperBound >= 255) {
       progress?.(`Processing layer ${index + 1}/${layerBounds.length}`)

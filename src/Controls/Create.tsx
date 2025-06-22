@@ -130,7 +130,9 @@ function CreateFlow() {
       "image/*": [".png", ".jpg", ".jpeg", ".webp"],
     },
     onDrop: (files) => {
-      selectedImage.value = files[0] || null
+      if (!files.length)
+        return
+      selectedImage.value = files[0]
       setBackground(selectedImage.value)
       setRenderer(undefined)
     },
@@ -174,6 +176,9 @@ function CreateFlow() {
   if (creatingFlow.value) {
     const [message, value] = createProgress.value || ["Creating flow", undefined]
     return <>
+      <div className="">
+        Create a new flow requires heavy computation, and may cause page to temporarily freeze.
+      </div>
       <div className="alert alert-soft alert-primary">
         {message}
       </div>
@@ -226,6 +231,9 @@ function CreateFlow() {
         className="hidden"
         {...getInputProps()}
       />
+    </div>
+    <div>
+      Suggest 1080P images
     </div>
   </>
 }

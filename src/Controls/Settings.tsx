@@ -14,6 +14,9 @@ export function InnerSettings() {
       animate={{ filter: "blur(0px)", opacity: 1 }}
       exit={{ filter: "blur(4px)", opacity: 0, z: -1 }}
     >
+      <div>
+        🚧 WIP 🚧
+      </div>
       <div
         className="btn btn-soft btn-primary w-full"
         onClick={() => {
@@ -22,6 +25,13 @@ export function InnerSettings() {
       >
         Clear Model Cache
       </div>
+      <a
+        className="link"
+        href="https://github.com/K024/depth-flow"
+        target="_blank"
+      >
+        Github Page
+      </a>
     </motion.div>
   )
 }
