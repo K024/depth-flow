@@ -7,6 +7,7 @@ import { setBackground } from "../Canvas/Background"
 import { createFlowSimpleRenderer } from "../depth-flow/renderer/simple"
 import { loadFlowZip } from "../depth-flow/flow-file"
 import { setRenderer } from "../Canvas/Renderer"
+import { createFlowMultilayerRenderer } from "../depth-flow/renderer/multilayer"
 
 
 const flowFile = signal<File | null>(null)
@@ -25,12 +26,17 @@ const {
   canvas.width = 800
   canvas.height = 600
 
-  const renderer = await createFlowSimpleRenderer(canvas, flow)
+  // const renderer = await createFlowSimpleRenderer(canvas, flow)
+
+  const renderer = "layers" in flow
+    ? await createFlowMultilayerRenderer(canvas, flow)
+    : await createFlowSimpleRenderer(canvas, flow)
 
   setBackground(null)
   setRenderer({
     key: Math.random().toString(36).slice(2),
     render: renderer.render,
+    frameCounter: renderer.frameTimeCounter,
     canvas,
   })
 
@@ -82,7 +88,7 @@ function CreateFlowRenderer() {
   if (renderer.value) {
     return <>
       <div className="alert alert-soft alert-primary">
-        Renderer created successfully
+        Renderer ({renderer.value.type}) created successfully
       </div>
       <div
         className="btn btn-soft btn-primary w-full"

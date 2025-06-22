@@ -14,6 +14,8 @@ uniform vec3 camera_target_center; // near [0, 0, 1]
 uniform vec2 camera_zoom_scale; // [1, 1]
 
 uniform vec2 image_size;
+uniform vec2 camera_size;
+
 uniform sampler2D image;
 uniform sampler2D depth_map;
 
@@ -29,13 +31,13 @@ const vec3 far_plane_center = vec3(0.f, 0.f, 1.1f);
 
 // helper functions
 
-float position_depth(sampler2D depth_map, vec3 pos) {
+float position_depth(vec3 pos) {
   vec2 tex_coord = pos.xy * 0.5f + 0.5f;
   vec4 sampl = texture(depth_map, tex_coord);
   return -(sampl.r * 2.f - 1.f); // 0 ~ 1 to 1 ~ -1
 }
 
-vec4 position_color(sampler2D image, vec3 pos) {
+vec4 position_color(vec3 pos) {
   vec2 tex_coord = pos.xy * 0.5f + 0.5f;
   vec4 sampl = texture(image, tex_coord);
   return sampl;
@@ -54,40 +56,32 @@ vec3 ray_plane_intersect(vec3 ray_origin, vec3 ray_direction, vec3 plane_origin,
 
 // ray marching
 
-vec3 ray_marching_backward(vec3 near_point, vec3 far_point, float backward_step_size, sampler2D depth_map, float walk) {
-  for(int it = 0; it <= backward_steps; it += 1) {
-    walk -= backward_step_size;
-    vec3 pos = mix(near_point, far_point, walk);
-    float depth = position_depth(depth_map, pos);
-    if(pos.z < depth) { // a small step out of boundary
-      break;
-    }
-  }
-  return mix(near_point, far_point, walk);
-}
-
-void ray_marching(vec3 near_point, vec3 far_point, out vec4 final_color, out vec3 final_pos) {
-  float walk = 0.f;
+void ray_marching(vec3 near_point, vec3 far_point, out vec4 current_color) {
+  vec3 ray_position = near_point;
   float forward_step_size = 1.f / float(forward_steps);
   float backward_step_size = forward_step_size / float(backward_steps);
-
-  vec4 current_color = vec4(0.f, 0.f, 0.f, 0.f);
+  vec3 forward_step = (far_point - near_point) * forward_step_size;
+  vec3 backward_step = (near_point - far_point) * backward_step_size;
 
   // forward iterations
   for(int it = 0; it <= forward_steps; it += 1) {
-    walk += forward_step_size;
-    vec3 pos = mix(near_point, far_point, walk);
-    float depth = position_depth(depth_map, pos);
-    bool is_in_depth = pos.z > depth;
-    if(is_in_depth) { // we reached the depth boundary
-      vec3 pos = ray_marching_backward(near_point, far_point, backward_step_size, depth_map, walk);
-      current_color = position_color(image, pos);
+    ray_position += forward_step;
+    float depth = position_depth(ray_position);
+    if(ray_position.z > depth) { // we reached the depth boundary
       break;
     }
   }
 
-  final_pos = mix(near_point, far_point, walk);
-  final_color = current_color;
+  // backward iterations
+  for(int it = 0; it <= backward_steps; it += 1) {
+    ray_position += backward_step;
+    float depth = position_depth(ray_position);
+    if(ray_position.z < depth) { // a small step out of boundary
+      break;
+    }
+  }
+
+  current_color = position_color(ray_position);
 }
 
 void main() {
@@ -105,10 +99,10 @@ void main() {
   vec3 far_point = ray_plane_intersect(camera_position, ray_direction, far_plane_center, plane_norm);
 
   // ray marching
-  vec4 final_color;
-  vec3 final_pos;
-  ray_marching(near_point, far_point, final_color, final_pos);
+  vec4 current_color;
+  ray_marching(near_point, far_point, current_color);
 
   // output
-  outColor = final_color;
+  current_color.a = 1.f;
+  outColor = current_color;
 }

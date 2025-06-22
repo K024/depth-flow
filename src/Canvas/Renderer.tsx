@@ -2,6 +2,7 @@ import { signal } from "@preact/signals-react"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import { AnimatePresence, motion, motionValue, springValue } from "motion/react"
 import type { FlowSimpleRendererArgs, Vec3 } from "../depth-flow/renderer/simple"
+import type { FrameCounter } from "../depth-flow/renderer/common"
 
 
 // renderer
@@ -9,6 +10,7 @@ import type { FlowSimpleRendererArgs, Vec3 } from "../depth-flow/renderer/simple
 const currentRenderer = signal<{
   key: string
   render: (args: FlowSimpleRendererArgs) => number
+  frameCounter: FrameCounter
   canvas: HTMLCanvasElement
 }>()
 
@@ -49,6 +51,7 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
     const el = ref.current
     const canvas = renderer.canvas
     const render = renderer.render
+    const frameCounter = renderer.frameCounter
 
     canvas.className = "absolute left-0 top-0 w-full h-full"
     el.appendChild(canvas)
@@ -58,6 +61,7 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
       animationFrame = requestAnimationFrame(frame)
 
       if (!shouldRender) return
+      shouldRender = false
       render({
         origin: [
           defaultOrigin[0] - springMovementX.get(),
@@ -67,6 +71,10 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
         target: defaultTarget,
         zoomScale: defaultZoomScale,
       })
+      if (frameCounter.totalRenders >= 1000) {
+        console.log(`Frame average time: ${frameCounter.averageTime.toFixed(2)} ms`)
+        frameCounter.reset()
+      }
     }
 
     shouldRender = true
@@ -115,12 +123,18 @@ export function Renderer() {
       centerMovementH.set(newValue)
     }
 
+    const resize = () => {
+      shouldRender = true
+    }
 
-    window.addEventListener("mousemove", mouseMove)
+
+    window.addEventListener("pointermove", mouseMove)
     window.addEventListener("wheel", mouseWheel)
+    window.addEventListener("resize", resize)
     return () => {
-      window.removeEventListener("mousemove", mouseMove)
+      window.removeEventListener("pointermove", mouseMove)
       window.removeEventListener("wheel", mouseWheel)
+      window.removeEventListener("resize", resize)
     }
   }, [])
 

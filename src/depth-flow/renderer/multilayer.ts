@@ -1,20 +1,20 @@
-import type { FlowSimple } from "../types"
+import type { FlowMultilayer } from "../types"
 import { loadImageFromBlob } from "../image/utils"
 import { calculateZoomScale, createFrameTimeCounter, createPlaneShaderProgram } from "./common"
-import fragSrc from "./shaders/simple-frag.glsl?raw"
+import fragSrc from "./shaders/multilayer-frag.glsl?raw"
 
 
 export type Vec2 = [number, number]
 export type Vec3 = [number, number, number]
 
-export interface FlowSimpleRendererArgs {
+export interface FlowMultilayerRendererArgs {
   origin: Vec3
   target: Vec3
   zoomScale: number
 }
 
 
-export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: FlowSimple) {
+export async function createFlowMultilayerRenderer(canvas: HTMLCanvasElement, flow: FlowMultilayer) {
 
   const {
     beforeFrameRender,
@@ -25,22 +25,28 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
 
   const { width, height } = flow
 
-  const originalImage = await loadImageFromBlob(flow.originalImage)
-  const originalDepthMap = await loadImageFromBlob(flow.originalDepthMap)
+  const layers: { layer: WebGLTexture, depth_map: WebGLTexture }[] = []
 
-  const imageTexture = createTexture(originalImage)
-  const depthMapTexture = createTexture(originalDepthMap)
+  for (const layer of flow.layers) {
+    const image = await loadImageFromBlob(layer.image)
+    const depthMap = await loadImageFromBlob(layer.depthMap)
+    layers.push({
+      layer: createTexture(image),
+      depth_map: createTexture(depthMap)
+    })
+  }
 
   setUniforms({
-    image: imageTexture,
-    depth_map: depthMapTexture,
+    num_layers: layers.length,
+    layers: layers.map(x => x.layer),
+    depth_maps: layers.map(x => x.depth_map),
     forward_steps: 120,
     backward_steps: 8,
   })
 
   const frameTimeCounter = createFrameTimeCounter()
 
-  function render(args: FlowSimpleRendererArgs) {
+  function render(args: FlowMultilayerRendererArgs) {
     const start = performance.now()
 
     const cameraSize = beforeFrameRender()
@@ -60,7 +66,7 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
 
 
   return {
-    type: "simple" as const,
+    type: "multilayer" as const,
     render,
     frameTimeCounter,
   }

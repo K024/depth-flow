@@ -22,16 +22,24 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
     },
   })
 
+  gl.useProgram(program.program)
   twgl.setBuffersAndAttributes(gl, program, buffers)
 
 
   // functions
+
+  function setUniforms(uniforms: Record<string, any>) {
+    gl.useProgram(program.program)
+    twgl.setUniforms(program, uniforms)
+  }
+
 
   function beforeFrameRender() {
     twgl.resizeCanvasToDisplaySize(canvas, window.devicePixelRatio || 1)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, canvas.width, canvas.height)
     gl.clear(gl.COLOR_BUFFER_BIT)
+    return [canvas.width, canvas.height] as const
   }
 
 
@@ -47,7 +55,7 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
       src,
       wrap: gl.CLAMP_TO_EDGE,
       flipY: gl.UNPACK_FLIP_Y_WEBGL,
-      minMag: gl.LINEAR,
+      min: gl.LINEAR,
       mag: gl.LINEAR,
     })
   }
@@ -60,11 +68,20 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
     beforeFrameRender,
     renderWithUniforms,
     createTexture,
+    setUniforms,
   }
 }
 
 
-export function createFrameTimeCounter() {
+export interface FrameCounter {
+  render: (time: number) => void
+  reset: () => void
+  totalTime: number
+  totalRenders: number
+  averageTime: number
+}
+
+export function createFrameTimeCounter(): FrameCounter {
   let totalTime = 0
   let totalRenders = 0
 

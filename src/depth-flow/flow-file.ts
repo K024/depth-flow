@@ -14,7 +14,7 @@ export async function loadFlowZip(zipFile: Blob): Promise<Flow> {
 
   const config = JSON.parse(await blobs[configFileName].text()) as FlowConfig
 
-  if ("inpaintLayers" in config) {
+  if ("layers" in config) {
 
     const flow: FlowMultilayer = {
       originalImage: ensureBlob(blobs, config.originalImage),
@@ -57,7 +57,7 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
 
   let config: FlowConfig
 
-  if ("inpaintLayers" in flow) {
+  if ("layers" in flow) {
     config = {
       originalImage: getBlobName(flow.originalImage, "image.png"),
       originalDepthMap: `depth-map.png`,
@@ -95,7 +95,7 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
     [configFileName]: configBlob,
   }
 
-  if ("inpaintLayers" in config && "layers" in flow) {
+  if ("layers" in config && "layers" in flow) {
     for (const [index, layer] of config.layers.entries()) {
       filesToZip[layer.image] = flow.layers[index].image
       filesToZip[layer.depthMap] = flow.layers[index].depthMap
