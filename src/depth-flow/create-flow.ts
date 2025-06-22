@@ -1,7 +1,7 @@
 import { getCachedFile } from "./file-cache"
 import { saveFlowZip } from "./flow-file"
 import { consoleLogHistogram, consoleLogImageData } from "./image/console"
-import { alphaBlend, dilateImageData, getImageData, loadImageFromBlob, saveImageData, scaleImageData, writeImageDataChannel } from "./image/utils"
+import { alphaBlend, dilateImageData, gaussianBlurImageData, getImageData, loadImageFromBlob, saveImageData, scaleImageData, writeImageDataChannel } from "./image/utils"
 import { depthModelUrl, inpaintModelUrl } from "./models/cache"
 import { getDepthModelSession, inferDepthModelSession, resizeImageForDepthModel } from "./models/depth"
 import { getInpaintModelSession, inferInpaintSession, scaleImageAndMaskDataForInpaint } from "./models/inpaint"
@@ -39,7 +39,7 @@ export interface SimpleFlowArgs {
   depthMapDilateRadius?: number
 }
 
-async function simpleProcess(image: Blob, args?: SimpleFlowArgs, progress?: ProgressReporter) {
+async function simpleProcess(image: Blob, args: Required<SimpleFlowArgs>, progress?: ProgressReporter) {
   progress?.("Loading depth model")
   await frame()
 
@@ -63,25 +63,26 @@ async function simpleProcess(image: Blob, args?: SimpleFlowArgs, progress?: Prog
   await frame()
 
   const scaledBackDepthMap = await scaleImageData(depthMap, imageData.width, imageData.height)
-  const depthMapDilateRadius = clip(args?.depthMapDilateRadius ?? 4, 0, 20)
-  const dilatedDepthMap = await dilateImageData(scaledBackDepthMap, depthMapDilateRadius)
-  const depthMapBlob = await saveImageData(dilatedDepthMap, "image/png")
+  const dilatedDepthMap = await dilateImageData(scaledBackDepthMap, args.depthMapDilateRadius)
 
   return {
     imageData,
     scaledBackDepthMap,
     dilatedDepthMap,
-    depthMapBlob,
-    depthMapDilateRadius,
   }
 }
 
 export async function createSimpleFlow(image: Blob, args?: SimpleFlowArgs, progress?: ProgressReporter) {
+
+  const normalizedArgs: Required<SimpleFlowArgs> = {
+    depthMapDilateRadius: clip(args?.depthMapDilateRadius ?? 4, 0, 20),
+  }
+
   const {
     imageData,
-    depthMapBlob,
-    depthMapDilateRadius,
-  } = await simpleProcess(image, args, progress)
+    dilatedDepthMap,
+  } = await simpleProcess(image, normalizedArgs, progress)
+  const depthMapBlob = await saveImageData(dilatedDepthMap, "image/png")
 
   progress?.("Making flow file")
   await frame()
@@ -93,9 +94,7 @@ export async function createSimpleFlow(image: Blob, args?: SimpleFlowArgs, progr
     height: imageData.height,
 
     processedBy: "depth-flow-web/simple/v0",
-    processArgs: {
-      depthMapDilateRadius,
-    },
+    processArgs: normalizedArgs,
   }
   const flowBlob = await saveFlowZip(flow)
 
@@ -105,17 +104,29 @@ export async function createSimpleFlow(image: Blob, args?: SimpleFlowArgs, progr
 
 export interface MultilayerFlowArgs {
   depthMapDilateRadius?: number
+  layerInpaintMaskDilateRadius?: number
+  layerInpaintMaskBlurRadius?: number
   layerDepthMapDilateRadius?: number
+  layerDepthMapBlurRadius?: number
+  layerDisplayMaskBlurRadius?: number
 }
 
-export async function createMultilayerFlow(image: Blob, args: MultilayerFlowArgs, progress?: ProgressReporter): Promise<File> {
+export async function createMultilayerFlow(image: Blob, args?: MultilayerFlowArgs, progress?: ProgressReporter): Promise<File> {
+
+  const normalizedArgs: Required<MultilayerFlowArgs> = {
+    depthMapDilateRadius: clip(args?.depthMapDilateRadius ?? 1, 0, 20),
+    layerInpaintMaskDilateRadius: clip(args?.layerInpaintMaskDilateRadius ?? 12, 0, 30),
+    layerInpaintMaskBlurRadius: clip(args?.layerInpaintMaskBlurRadius ?? 2, 0, 10),
+    layerDepthMapDilateRadius: clip(args?.layerDepthMapDilateRadius ?? 6, 0, 10),
+    layerDepthMapBlurRadius: clip(args?.layerDepthMapBlurRadius ?? 2, 0, 10),
+    layerDisplayMaskBlurRadius: clip(args?.layerDisplayMaskBlurRadius ?? 2, 0, 10),
+  }
 
   const {
     imageData,
     dilatedDepthMap,
-    depthMapBlob,
-    depthMapDilateRadius,
-  } = await simpleProcess(image, args, progress)
+  } = await simpleProcess(image, normalizedArgs, progress)
+  const depthMapBlob = await saveImageData(dilatedDepthMap, "image/png")
 
   progress?.("Splitting image by depth")
   await frame()
@@ -134,7 +145,6 @@ export async function createMultilayerFlow(image: Blob, args: MultilayerFlowArgs
 
   await frame()
 
-  const layerDepthMapDilateRadius = clip(args.layerDepthMapDilateRadius ?? 4, 0, 10)
   const layers: FlowMultilayer["layers"] = []
   for (const [index, [lowerBound, upperBound]] of layerBounds.entries()) {
 
@@ -144,7 +154,14 @@ export async function createMultilayerFlow(image: Blob, args: MultilayerFlowArgs
 
       const lowerBoundMask = await getDepthMapMaskByLowerBound(dilatedDepthMap, lowerBound)
       const { mask: upperBoundMask } = await clipDepthMapWithUpperBound(dilatedDepthMap, upperBound)
-      const mergedDepthMap = await postprocessAndMergeDepthMapAndMasks(dilatedDepthMap, lowerBoundMask, upperBoundMask, layerDepthMapDilateRadius)
+      // const dilatedUpperBoundMask = await dilateImageData(upperBoundMask, normalizedArgs.layerInpaintMaskDilateRadius)
+      // const processedUpperBoundMask = await gaussianBlurImageData(dilatedUpperBoundMask, normalizedArgs.layerInpaintMaskBlurRadius)
+      const mergedDepthMap = await postprocessAndMergeDepthMapAndMasks(
+        dilatedDepthMap, lowerBoundMask, upperBoundMask,
+        normalizedArgs.layerDepthMapDilateRadius,
+        normalizedArgs.layerDepthMapBlurRadius,
+        normalizedArgs.layerDisplayMaskBlurRadius
+      )
 
       console.log(`layer ${index + 1}/${layerBounds.length} layerDepthMap`)
       await consoleLogImageData(mergedDepthMap)
@@ -165,13 +182,20 @@ export async function createMultilayerFlow(image: Blob, args: MultilayerFlowArgs
 
       const lowerBoundMask = await getDepthMapMaskByLowerBound(dilatedDepthMap, lowerBound)
       const { clippedMap, mask: upperBoundMask } = await clipDepthMapWithUpperBound(dilatedDepthMap, upperBound)
+      const dilatedUpperBoundMask = await dilateImageData(upperBoundMask, normalizedArgs.layerInpaintMaskDilateRadius)
+      const processedUpperBoundMask = await gaussianBlurImageData(dilatedUpperBoundMask, normalizedArgs.layerInpaintMaskBlurRadius)
       const processedMap = await postprocessClippedDepthMap(clippedMap, upperBoundMask)
-      const mergedDepthMap = await postprocessAndMergeDepthMapAndMasks(processedMap, lowerBoundMask, upperBoundMask, layerDepthMapDilateRadius)
+      const mergedDepthMap = await postprocessAndMergeDepthMapAndMasks(
+        processedMap, lowerBoundMask, processedUpperBoundMask,
+        normalizedArgs.layerDepthMapDilateRadius,
+        normalizedArgs.layerDepthMapBlurRadius,
+        normalizedArgs.layerDisplayMaskBlurRadius
+      )
 
       // console.log(`layer ${index + 1}/${layerBounds.length} lowerBoundMask`)
       // await consoleLogImageData(lowerBoundMask)
-      // console.log(`layer ${index + 1}/${layerBounds.length} upperBoundMask`)
-      // await consoleLogImageData(upperBoundMask)
+      // console.log(`layer ${index + 1}/${layerBounds.length} processedUpperBoundMask`)
+      // await consoleLogImageData(processedUpperBoundMask)
       // console.log(`layer ${index + 1}/${layerBounds.length} clippedMap`)
       // await consoleLogImageData(clippedMap)
       // console.log(`layer ${index + 1}/${layerBounds.length} processedMap`)
@@ -182,7 +206,7 @@ export async function createMultilayerFlow(image: Blob, args: MultilayerFlowArgs
       progress?.(`Running inpaint model for layer ${index + 1}/${layerBounds.length}`)
       await frame()
 
-      const { scaledImageData, scaledMask } = await scaleImageAndMaskDataForInpaint(imageData, upperBoundMask)
+      const { scaledImageData, scaledMask } = await scaleImageAndMaskDataForInpaint(imageData, processedUpperBoundMask)
       const imageTensor = tensorFromImageData(scaledImageData, false)
       const maskTensor = tensorFromImageDataChannel(scaledMask, "r", false)
       const inpaintedTensor = await inferInpaintSession(inpaintModelSession, imageTensor, maskTensor)
@@ -196,16 +220,16 @@ export async function createMultilayerFlow(image: Blob, args: MultilayerFlowArgs
 
       const scaledBackInpaintedLayer = await scaleImageData(inpaintedLayer, imageData.width, imageData.height)
 
-      await writeImageDataChannel(upperBoundMask, "r", scaledBackInpaintedLayer, "a")
+      await writeImageDataChannel(processedUpperBoundMask, "r", scaledBackInpaintedLayer, "a")
       const layerImageData = await alphaBlend(imageData, scaledBackInpaintedLayer)
-      const layerImage = await saveImageData(layerImageData, "image/png")
-      const layerDepthMap = await saveImageData(mergedDepthMap, "image/png")
 
       // console.log(`layer ${index + 1}/${layerBounds.length} scaledBackInpaintedLayer`)
       // await consoleLogImageData(scaledBackInpaintedLayer)
       console.log(`layer ${index + 1}/${layerBounds.length} layerImageData`)
       await consoleLogImageData(layerImageData)
 
+      const layerImage = await saveImageData(layerImageData, "image/png")
+      const layerDepthMap = await saveImageData(mergedDepthMap, "image/png")
       layers.push({
         image: layerImage,
         depthMap: layerDepthMap,
@@ -228,10 +252,7 @@ export async function createMultilayerFlow(image: Blob, args: MultilayerFlowArgs
     layers,
 
     processedBy: "depth-flow-web/simple/v0",
-    processArgs: {
-      depthMapDilateRadius,
-      layerDepthMapDilateRadius,
-    },
+    processArgs: normalizedArgs,
   }
   const flowBlob = await saveFlowZip(flow)
 

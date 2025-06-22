@@ -1,4 +1,4 @@
-import { alphaBlend as alphaBlendImageData, dilateImageData, gaussianBlurImageData, writeImageDataChannel } from "../image/utils"
+import { alphaBlend as alphaBlendImageData, dilateImageData, gaussianBlurImageData, minFilter, writeImageDataChannel } from "../image/utils"
 
 
 export function getBoundsForDivisions(divisionPoints: number[]) {
@@ -53,7 +53,7 @@ export async function clipDepthMapWithUpperBound(depthMap: ImageData, upperBound
 
 export async function postprocessClippedDepthMap(clippedMap: ImageData, mask: ImageData) {
   const radius = 12
-  const iterations = 8
+  const iterations = 12
 
   let currentImageData = clippedMap
 
@@ -96,15 +96,13 @@ export async function getDepthMapMaskByLowerBound(depthMap: ImageData, lowerBoun
 
 export async function postprocessAndMergeDepthMapAndMasks(
   depthMap: ImageData, lowerBoundMask: ImageData, upperBoundMask: ImageData,
-  layerDepthMapDilateRadius: number,
+  layerDepthMapDilateRadius: number, layerDepthMapBlurRadius: number, layerDisplayMaskBlurRadius: number
 ) {
-  const dilatedDepthMap = await dilateImageData(depthMap, layerDepthMapDilateRadius)
-  const dilatedLowerBound = await dilateImageData(lowerBoundMask, layerDepthMapDilateRadius / 2)
-  const blurredLowerBound = await gaussianBlurImageData(dilatedLowerBound, layerDepthMapDilateRadius / 2)
-
-  await writeImageDataChannel(blurredLowerBound, "r", dilatedDepthMap, "g")
-  await writeImageDataChannel(upperBoundMask, "r", dilatedDepthMap, "b")
-
-  return dilatedDepthMap
+  depthMap = await dilateImageData(depthMap, layerDepthMapDilateRadius)
+  depthMap = await gaussianBlurImageData(depthMap, layerDepthMapBlurRadius)
+  lowerBoundMask = await gaussianBlurImageData(lowerBoundMask, layerDisplayMaskBlurRadius)
+  await writeImageDataChannel(lowerBoundMask, "r", depthMap, "g")
+  await writeImageDataChannel(upperBoundMask, "r", depthMap, "b")
+  return depthMap
 }
 

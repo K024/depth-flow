@@ -102,6 +102,9 @@ export const minFilter = (a: number, b: number) => a < b ? a : b
 
 export async function dilateImageData(imageData: ImageData, radius: number, filter: (a: number, b: number) => number = maxFilter) {
   radius = Math.round(radius)
+  if (radius <= 0)
+    return cloneImageData(imageData)
+
   const { data, width, height } = imageData
   const dataLength = data.length
 

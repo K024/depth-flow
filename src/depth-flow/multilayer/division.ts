@@ -30,6 +30,9 @@ export function percentileBasedDivision(histogram: number[], numLayers = 3) {
   return divisionPoints
 }
 
+
+const valleyThreshold = 1
+
 export function valleyBasedDivision(histogram: number[], numLayers = 10) {
   const smoothed = new Array(256).fill(0)
   const windowSize = 8
@@ -52,7 +55,7 @@ export function valleyBasedDivision(histogram: number[], numLayers = 10) {
 
   const valleys: { index: number, value: number }[] = []
   for (let i = 1; i < 255; i++) {
-    if (smoothed[i] < avg && smoothed[i] < smoothed[i - 1] && smoothed[i] < smoothed[i + 1]) {
+    if (smoothed[i] < avg * valleyThreshold && smoothed[i] < smoothed[i - 1] && smoothed[i] < smoothed[i + 1]) {
       valleys.push({ index: i, value: smoothed[i] })
     }
   }
@@ -69,7 +72,7 @@ export function valleyBasedDivision(histogram: number[], numLayers = 10) {
 
 
 
-let filterThreshold = 0.05
+let filterThreshold = 0.10
 
 function filterDivisionPoints(histogram: number[], divisionPoints: number[]) {
   const totalPixels = histogram.reduce((sum, count) => sum + count, 0)

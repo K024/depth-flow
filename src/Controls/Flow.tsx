@@ -48,6 +48,8 @@ const reset = () => {
   resetRenderer()
 }
 
+export { createRenderer }
+
 
 
 function CreateFlowRenderer() {
@@ -57,6 +59,8 @@ function CreateFlowRenderer() {
       "application/zip": [".zip"],
     },
     onDrop: (files) => {
+      if (!files.length)
+        return
       flowFile.value = files[0]
       createRenderer(flowFile.value)
     },

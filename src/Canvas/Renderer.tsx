@@ -22,7 +22,7 @@ export function setRenderer(renderer: typeof currentRenderer.value | null) {
 
 // params
 
-const defaultOrigin: Vec3 = [0, 0, -15]
+const defaultOrigin: Vec3 = [0, 0, -20]
 const defaultTarget: Vec3 = [0, 0, 0]
 const defaultZoomScale = 1
 
@@ -66,7 +66,7 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
         origin: [
           defaultOrigin[0] - springMovementX.get(),
           defaultOrigin[1] + springMovementY.get(),
-          20 / ((20 / defaultOrigin[2]) + springMovementH.get()),
+          30 / ((30 / defaultOrigin[2]) + springMovementH.get()),
         ],
         target: defaultTarget,
         zoomScale: defaultZoomScale,

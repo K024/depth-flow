@@ -1,10 +1,9 @@
 import { signal } from "@preact/signals-react"
 import { motion } from "motion/react"
+import { clearModelCache } from "../depth-flow/models/cache"
 
 
 export const depthMapDilateRadius = signal(4)
-
-export const layerDepthMapDilateRadius = signal(4)
 
 
 export function InnerSettings() {
@@ -15,7 +14,12 @@ export function InnerSettings() {
       animate={{ filter: "blur(0px)", opacity: 1 }}
       exit={{ filter: "blur(4px)", opacity: 0, z: -1 }}
     >
-      <div className="btn btn-soft btn-primary w-full">
+      <div
+        className="btn btn-soft btn-primary w-full"
+        onClick={() => {
+          clearModelCache()
+        }}
+      >
         Clear Model Cache
       </div>
     </motion.div>

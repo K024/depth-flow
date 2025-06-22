@@ -97,14 +97,14 @@ vec3 ray_plane_intersect(vec3 ray_origin, vec3 ray_direction, vec3 plane_origin,
     if (layer_idx >= num_layers) { \
       return; \
     } \
-    for(int it = 0; it <= forward_steps; it += 1) { \
+    for(; it_f <= forward_steps; it_f += 1) { \
       ray_position += forward_step; \
       float depth = position_depth_idx(ray_position); \
       if(ray_position.z > depth) { \
         break; \
       } \
     } \
-    for(int it = 0; it <= backward_steps; it += 1) { \
+    for(int it_b = 0; it_b <= backward_steps; it_b += 1) { \
       ray_position += backward_step; \
       float depth = position_depth_idx(ray_position); \
       if(ray_position.z < depth) { \
@@ -116,6 +116,8 @@ vec3 ray_plane_intersect(vec3 ray_origin, vec3 ray_direction, vec3 plane_origin,
     if(current_color.a > alpha_threshold) { \
       return; \
     } \
+    it_f -= 1; \
+    ray_position -= forward_step; \
   }
 
 
@@ -128,6 +130,7 @@ void multi_layer_ray_marching(vec3 near_point, vec3 far_point, out vec4 current_
 
   current_color = vec4(0.f, 0.f, 0.f, 0.f);
 
+  int it_f = 0;
   make_ray_marching_body(position_depth_0, position_color_0, 0)
   make_ray_marching_body(position_depth_1, position_color_1, 1)
   make_ray_marching_body(position_depth_2, position_color_2, 2)

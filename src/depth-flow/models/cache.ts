@@ -1,5 +1,5 @@
 import type { ProgressReporter } from "../utils"
-import { listAllKeys, downloadWithProgress, saveCachedFile } from "../file-cache"
+import { listAllKeys, downloadWithProgress, saveCachedFile, clearCache } from "../file-cache"
 import { humanSize } from "../../Controls/utils"
 
 
@@ -17,6 +17,10 @@ const allModels = [
 export async function checkAllModelsCached() {
   const keys = await listAllKeys()
   return allModels.every(url => keys.includes(url))
+}
+
+export async function clearModelCache() {
+  return clearCache(allModels)
 }
 
 

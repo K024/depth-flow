@@ -59,7 +59,7 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
 
   if ("layers" in flow) {
     config = {
-      originalImage: getBlobName(flow.originalImage, "image.png"),
+      originalImage: `image.${getBlobNameExtension(flow.originalImage, "png")}`,
       originalDepthMap: `depth-map.png`,
       width: flow.width,
       height: flow.height,
@@ -77,7 +77,7 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
     }
   } else {
     config = {
-      originalImage: getBlobName(flow.originalImage, "image.png"),
+      originalImage: `image.${getBlobNameExtension(flow.originalImage, "png")}`,
       originalDepthMap: `depth-map.png`,
       width: flow.width,
       height: flow.height,
@@ -114,9 +114,12 @@ function ensureBlob(blobs: Record<string, Blob>, key: string) {
   return blobs[key]
 }
 
-function getBlobName(blob: Blob, fallback: string) {
-  if (blob instanceof File)
-    return blob.name
+function getBlobNameExtension(blob: Blob, fallback: string) {
+  if (blob instanceof File) {
+    const ext = blob.name.split(".").pop()!.toLowerCase()
+    if (["png", "jpg", "jpeg"].includes(ext))
+      return ext
+  }
 
   return fallback
 }
