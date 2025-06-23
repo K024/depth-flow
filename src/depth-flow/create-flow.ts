@@ -65,6 +65,9 @@ async function simpleProcess(image: Blob, args: Required<SimpleFlowArgs>, progre
   const scaledBackDepthMap = await scaleImageData(depthMap, imageData.width, imageData.height)
   const dilatedDepthMap = await dilateImageData(scaledBackDepthMap, args.depthMapDilateRadius)
 
+  console.log(`dilatedDepthMap`)
+  await consoleLogImageData(dilatedDepthMap)
+
   return {
     imageData,
     scaledBackDepthMap,

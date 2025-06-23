@@ -31,11 +31,11 @@ export function percentileBasedDivision(histogram: number[], numLayers = 3) {
 }
 
 
-const valleyThreshold = 1
+const valleyThreshold = 1.2
 
 export function valleyBasedDivision(histogram: number[], numLayers = 10) {
   const smoothed = new Array(256).fill(0)
-  const windowSize = 8
+  const windowSize = 5
 
   for (let i = 0; i < 256; i++) {
     let sum = 0
@@ -99,8 +99,8 @@ function filterDivisionPoints(histogram: number[], divisionPoints: number[]) {
 
 
 
-const valleyCandidates = 12
-const percentileCandidates = 5
+const valleyCandidates = 10
+const percentileCandidates = 4
 
 
 export function multilayerDepthMapDivisions(depthMap: ImageData) {
@@ -109,6 +109,10 @@ export function multilayerDepthMapDivisions(depthMap: ImageData) {
   const valleysPoints = valleyBasedDivision(histogram, valleyCandidates)
 
   const percentilePoints = percentileBasedDivision(histogram, percentileCandidates)
+
+  console.log({
+    valleysPoints, percentilePoints,
+  })
 
   const divisionPoints = percentilePoints.map(point => {
     const distances = valleysPoints.map(value => Math.abs(point - value))

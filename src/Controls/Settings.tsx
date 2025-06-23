@@ -13,14 +13,14 @@ export const depthMapDilateRadius = signal(4)
 
 export const depthMapDilateRadius_m = signal(1)
 
-export const layerInpaintMaskDilateRadius = signal(12)
+export const layerInpaintMaskDilateRadius = signal(8)
 export const layerInpaintMaskBlurRadius = signal(2)
 
 export const layerDepthMapDilateRadius = signal(6)
 export const layerDepthMapBlurRadius = signal(2)
 
 export const layerDisplayMaskBlurRadius = signal(2)
-export const boundOverlap = signal(4)
+export const boundOverlap = signal(8)
 
 
 function RangeFieldset({
