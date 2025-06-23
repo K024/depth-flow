@@ -1,4 +1,5 @@
 import clsx from "clsx"
+import { useEffect } from "react"
 import { motion } from "motion/react"
 import { signal } from "@preact/signals-react"
 import { useDropzone } from "react-dropzone"
@@ -8,9 +9,13 @@ import { createFlowSimpleRenderer } from "../depth-flow/renderer/simple"
 import { loadFlowZip } from "../depth-flow/flow-file"
 import { setRenderer } from "../Canvas/Renderer"
 import { createFlowMultilayerRenderer } from "../depth-flow/renderer/multilayer"
+import { clearCache, getCachedFile, saveCachedFile } from "../depth-flow/file-cache"
 
 
 const flowFile = signal<File | null>(null)
+
+
+const flowFileCacheUrl = "file://depth-flow-cache/last-flow.zip"
 
 
 const {
@@ -21,6 +26,8 @@ const {
   error: creatingRendererError,
 } = asyncState(async (flowFile: Blob) => {
   const flow = await loadFlowZip(flowFile)
+
+  saveCachedFile(flowFileCacheUrl, flowFile)
 
   const canvas = document.createElement("canvas")
   canvas.width = 800
@@ -49,6 +56,21 @@ const reset = () => {
 }
 
 export { createRenderer }
+
+export function useLastFlowFileWhenInit() {
+  useEffect(() => {
+    getCachedFile(flowFileCacheUrl).then((file) => {
+      if (file) {
+        flowFile.value = new File([file], "last-flow.zip", { type: "application/zip" })
+        createRenderer(flowFile.value)
+      }
+    })
+  }, [])
+}
+
+export function clearLastFlowFileCache() {
+  clearCache([flowFileCacheUrl])
+}
 
 
 
@@ -91,8 +113,10 @@ function CreateFlowRenderer() {
 
   if (renderer.value) {
     return <>
-      <div className="alert alert-soft alert-primary">
-        Renderer ({renderer.value.type}) created successfully
+      <div className="text-sm opacity-70">
+        Renderer ({renderer.value.type}) created successfully.
+        <br />
+        Move your mouse around and zoom in/out with the mouse wheel to see the flow effect.
       </div>
       <div
         className="btn btn-soft btn-primary w-full"
@@ -118,7 +142,7 @@ function CreateFlowRenderer() {
         {...getInputProps()}
       />
     </div>
-    <div>
+    <div className="text-sm opacity-70">
       A new flow file can be created using an image under the Create tab
     </div>
   </>

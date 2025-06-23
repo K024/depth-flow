@@ -5,7 +5,11 @@ import { signal } from "@preact/signals-react"
 import { useDropzone } from "react-dropzone"
 import { setBackground } from "../Canvas/Background"
 import { setRenderer } from "../Canvas/Renderer"
-import { depthMapDilateRadius } from "./Settings"
+import {
+  boundOverlap, depthMapDilateRadius, depthMapDilateRadius_m,
+  layerDepthMapBlurRadius, layerDepthMapDilateRadius,
+  layerDisplayMaskBlurRadius, layerInpaintMaskBlurRadius, layerInpaintMaskDilateRadius,
+} from "./Settings"
 import { humanSize, asyncState } from "./utils"
 import { checkAllModelsCached, downloadAllModels } from "../depth-flow/models/cache"
 // import { createMultilayerFlow, createSimpleFlow } from "../depth-flow/create-flow"
@@ -64,12 +68,19 @@ const {
     flowFile = await createMultilayerFlow(
       file,
       {
+        depthMapDilateRadius: depthMapDilateRadius_m.value,
+        layerInpaintMaskDilateRadius: layerInpaintMaskDilateRadius.value,
+        layerInpaintMaskBlurRadius: layerInpaintMaskBlurRadius.value,
+        layerDepthMapDilateRadius: layerDepthMapDilateRadius.value,
+        layerDepthMapBlurRadius: layerDepthMapBlurRadius.value,
+        layerDisplayMaskBlurRadius: layerDisplayMaskBlurRadius.value,
+        boundOverlap: boundOverlap.value,
       },
       (message, p) => createProgress.value = [message, p]
     )
   }
   createRenderer(flowFile)
-  return flowFile
+  return { flowFile, isSimple }
 })
 
 const reset = () => {
@@ -111,10 +122,10 @@ function Download() {
     </>
   }
   return <>
-    <p>
+    <div className="text-sm opacity-70">
       Create a new depth flow requires downloading and caching several AI models (~400MB).
       This process will only be performed once.
-    </p>
+    </div>
     <div className="btn btn-soft btn-primary w-full" onClick={confirmDownload}>
       Download Models
     </div>
@@ -141,16 +152,18 @@ function CreateFlow() {
   const flow = flowFile.value
   if (flow) {
     return <>
-      <div className="alert alert-soft alert-primary">
-        Flow created successfully
+      <div className="text-sm opacity-70">
+        Flow ({flow.isSimple ? "simple" : "multilayer"}) created successfully.
+        <br />
+        Download the flow file to use it next time.
       </div>
       <div
         className="btn btn-soft btn-primary w-full"
         onClick={() => {
-          downloadFile(flow)
+          downloadFile(flow.flowFile)
         }}
       >
-        Download ({humanSize(flow.size)})
+        Download ({humanSize(flow.flowFile.size)})
       </div>
       <div
         className="btn btn-soft btn-secondary w-full"
@@ -176,8 +189,8 @@ function CreateFlow() {
   if (creatingFlow.value) {
     const [message, value] = createProgress.value || ["Creating flow", undefined]
     return <>
-      <div className="">
-        Create a new flow requires heavy computation, and may cause page to temporarily freeze.
+      <div className="text-sm opacity-70">
+        Creating a new flow requires heavy computation, and may cause page to temporarily freeze.
       </div>
       <div className="alert alert-soft alert-primary">
         {message}
@@ -232,7 +245,7 @@ function CreateFlow() {
         {...getInputProps()}
       />
     </div>
-    <div>
+    <div className="text-sm opacity-70">
       Suggest 1080P images
     </div>
   </>

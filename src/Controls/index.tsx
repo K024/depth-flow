@@ -51,7 +51,7 @@ function ControlsContent() {
     <motion.div
       className={clsx(
         "fixed top-1/2 right-8 w-[20rem] h-full max-h-[32rem]",
-        "flex flex-col glass bg-white/50 rounded"
+        "flex flex-col glass bg-white/50 dark:bg-gray-800/50 rounded"
       )}
       initial={{ x: "120%", y: "-50%" }}
       animate={{ x: "0%", y: "-50%" }}
@@ -59,13 +59,22 @@ function ControlsContent() {
       transition={{ duration: 0.8, type: "spring", bounce: 0.2 }}
     >
       <Tabs />
-      <div className="flex-1 relative overflow-hidden z-0">
+      <div
+        className="flex-1 relative overflow-hidden z-0"
+        onWheel={e => {
+          // stop propagation to the document
+          // canvas renderer is listening to the wheel event
+          e.stopPropagation()
+        }}
+      >
         <TabContent />
       </div>
       <div
-        className="btn btn-soft text-black/30 rounded-t-none"
+        className="btn btn-soft rounded-t-none"
         onClick={() => hideControls.value = true}>
-        Hide Control Panel
+        <span className="opacity-30">
+          Hide Control Panel
+        </span>
       </div>
     </motion.div>
   )
@@ -75,14 +84,16 @@ function ControlsContent() {
 function ShowControlsButton() {
   return (
     <motion.div
-      className="fixed bottom-8 right-8 btn btn-circle text-black/30"
+      className="fixed bottom-8 right-8 btn btn-circle"
       initial={{ x: "6rem" }}
       animate={{ x: "0" }}
       exit={{ x: "6rem" }}
       transition={{ duration: 0.8, type: "spring", bounce: 0.2 }}
       onClick={() => hideControls.value = false}
     >
-      ◀
+      <span className="opacity-30">
+        ◀
+      </span>
     </motion.div>
   )
 }

@@ -56,8 +56,8 @@ vec3 ray_plane_intersect(vec3 ray_origin, vec3 ray_direction, vec3 plane_origin,
 
 // ray marching
 
-void ray_marching(vec3 near_point, vec3 far_point, out vec4 current_color) {
-  vec3 ray_position = near_point;
+void ray_marching(vec3 near_point, vec3 far_point, out vec4 current_color, out vec3 ray_position) {
+  ray_position = near_point;
   float forward_step_size = 1.f / float(forward_steps);
   float backward_step_size = forward_step_size / float(backward_steps);
   vec3 forward_step = (far_point - near_point) * forward_step_size;
@@ -100,9 +100,11 @@ void main() {
 
   // ray marching
   vec4 current_color;
-  ray_marching(near_point, far_point, current_color);
+  vec3 ray_position;
+  ray_marching(near_point, far_point, current_color, ray_position);
 
   // output
   current_color.a = 1.f;
   outColor = current_color;
+  gl_FragDepth = clamp(ray_position.z, -1.f, 1.f);
 }
