@@ -189,7 +189,10 @@ export async function createMultilayerFlow(image: Blob, args?: MultilayerFlowArg
       const { clippedMap, mask: upperBoundMask } = await clipDepthMapWithUpperBound(dilatedDepthMap, upperBound)
       const dilatedUpperBoundMask = await dilateImageData(upperBoundMask, normalizedArgs.layerInpaintMaskDilateRadius)
       const processedUpperBoundMask = await gaussianBlurImageData(dilatedUpperBoundMask, normalizedArgs.layerInpaintMaskBlurRadius)
-      const processedMap = await postprocessClippedDepthMap(clippedMap, upperBoundMask)
+      const processedMap = await postprocessClippedDepthMap(
+        clippedMap, processedUpperBoundMask,
+        normalizedArgs.layerInpaintMaskDilateRadius
+      )
       const mergedDepthMap = await postprocessAndMergeDepthMapAndMasks(
         processedMap, lowerBoundMask, processedUpperBoundMask,
         normalizedArgs.layerDepthMapDilateRadius,

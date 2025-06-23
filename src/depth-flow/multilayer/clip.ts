@@ -51,17 +51,18 @@ export async function clipDepthMapWithUpperBound(depthMap: ImageData, upperBound
 }
 
 
-export async function postprocessClippedDepthMap(clippedMap: ImageData, mask: ImageData) {
-  const radius = 12
+export async function postprocessClippedDepthMap(clippedMap: ImageData, mask: ImageData, depthMapExtraDilateRadius = 12) {
+  const radius = 24
   const iterations = 12
 
+  mask = await dilateImageData(mask, depthMapExtraDilateRadius)
   let currentImageData = clippedMap
 
   for (let i = 0; i < iterations; i++) {
-    const blurredMap = await gaussianBlurImageData(clippedMap, radius)
+    const blurredMap = await gaussianBlurImageData(currentImageData, radius)
     await writeImageDataChannel(mask, "r", blurredMap, "a")
     // update the inpainted areas with the blurred map
-    currentImageData = await alphaBlendImageData(currentImageData, blurredMap)
+    currentImageData = await alphaBlendImageData(clippedMap, blurredMap)
   }
 
   return currentImageData
