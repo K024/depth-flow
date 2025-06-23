@@ -2,7 +2,7 @@ import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
 import { signal } from "@preact/signals-react"
 import { Create } from "./Create"
-import { Flow } from "./Flow"
+import { Flow, useLastFlowFileWhenInit } from "./Flow"
 import { InnerSettings } from "./Settings"
 
 
@@ -100,6 +100,7 @@ function ShowControlsButton() {
 
 
 export function Controls() {
+  useLastFlowFileWhenInit()
   return (
     <AnimatePresence>
       {!hideControls.value && <ControlsContent key="controls" />}
