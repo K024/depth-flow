@@ -1,0 +1,22 @@
+{
+  "name": "depth-flow",
+  "version": "0.0.1",
+  "author": "K024",
+  "license": "MIT",
+  "homepage": "https://depth-flow.pages.dev",
+  "repository": "github:K024/depth-flow",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "twgl.js": "^6.1.1"
+  }
+}
