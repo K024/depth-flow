@@ -20,7 +20,6 @@ export async function createFlowMultilayerRenderer(canvas: HTMLCanvasElement, fl
     beforeFrameRender,
     renderWithUniforms,
     createTexture,
-    setUniforms,
   } = createPlaneShaderProgram(canvas, fragSrc)
 
   const { width, height } = flow
@@ -36,14 +35,6 @@ export async function createFlowMultilayerRenderer(canvas: HTMLCanvasElement, fl
     })
   }
 
-  setUniforms({
-    num_layers: layers.length,
-    layers: layers.map(x => x.layer),
-    depth_maps: layers.map(x => x.depth_map),
-    forward_steps: 120,
-    backward_steps: 8,
-  })
-
   const frameTimeCounter = createFrameTimeCounter()
 
   function render(args: FlowMultilayerRendererArgs) {
@@ -56,6 +47,11 @@ export async function createFlowMultilayerRenderer(canvas: HTMLCanvasElement, fl
       camera_zoom_scale: calculateZoomScale(canvas.width, canvas.height, width, height, args.zoomScale),
       image_size: [width, height],
       camera_size: cameraSize,
+      num_layers: layers.length,
+      layers: layers.map(x => x.layer),
+      depth_maps: layers.map(x => x.depth_map),
+      forward_steps: 120,
+      backward_steps: 8,
     })
 
     const end = performance.now()

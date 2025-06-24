@@ -28,12 +28,6 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
 
   // functions
 
-  function setUniforms(uniforms: Record<string, any>) {
-    gl.useProgram(program.program)
-    twgl.setUniforms(program, uniforms)
-  }
-
-
   function beforeFrameRender() {
     twgl.resizeCanvasToDisplaySize(canvas, window.devicePixelRatio || 1)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
@@ -68,7 +62,6 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
     beforeFrameRender,
     renderWithUniforms,
     createTexture,
-    setUniforms,
   }
 }
 

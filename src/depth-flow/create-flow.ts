@@ -119,12 +119,12 @@ export async function createMultilayerFlow(image: Blob, args?: MultilayerFlowArg
 
   const normalizedArgs: Required<MultilayerFlowArgs> = {
     depthMapDilateRadius: clip(args?.depthMapDilateRadius ?? 1, 0, 20),
-    layerInpaintMaskDilateRadius: clip(args?.layerInpaintMaskDilateRadius ?? 12, 0, 30),
+    layerInpaintMaskDilateRadius: clip(args?.layerInpaintMaskDilateRadius ?? 8, 0, 30),
     layerInpaintMaskBlurRadius: clip(args?.layerInpaintMaskBlurRadius ?? 2, 0, 10),
     layerDepthMapDilateRadius: clip(args?.layerDepthMapDilateRadius ?? 6, 0, 20),
     layerDepthMapBlurRadius: clip(args?.layerDepthMapBlurRadius ?? 2, 0, 10),
     layerDisplayMaskBlurRadius: clip(args?.layerDisplayMaskBlurRadius ?? 2, 0, 10),
-    boundOverlap: clip(args?.boundOverlap ?? 4, 0, 10),
+    boundOverlap: clip(args?.boundOverlap ?? 8, 0, 10),
   }
 
   const {

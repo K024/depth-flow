@@ -162,5 +162,5 @@ void main() {
   // output
   current_color.a = 1.f;
   outColor = current_color;
-  gl_FragDepth = clamp(ray_position.z, -1.f, 1.f);
+  // gl_FragDepth = clamp(ray_position.z, -1.f, 1.f);
 }

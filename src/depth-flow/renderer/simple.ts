@@ -20,7 +20,6 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
     beforeFrameRender,
     renderWithUniforms,
     createTexture,
-    setUniforms,
   } = createPlaneShaderProgram(canvas, fragSrc)
 
   const { width, height } = flow
@@ -30,13 +29,6 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
 
   const imageTexture = createTexture(originalImage)
   const depthMapTexture = createTexture(originalDepthMap)
-
-  setUniforms({
-    image: imageTexture,
-    depth_map: depthMapTexture,
-    forward_steps: 120,
-    backward_steps: 8,
-  })
 
   const frameTimeCounter = createFrameTimeCounter()
 
@@ -50,6 +42,10 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
       camera_zoom_scale: calculateZoomScale(canvas.width, canvas.height, width, height, args.zoomScale),
       image_size: [width, height],
       camera_size: cameraSize,
+      image: imageTexture,
+      depth_map: depthMapTexture,
+      forward_steps: 120,
+      backward_steps: 8,
     })
 
     const end = performance.now()
