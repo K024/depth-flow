@@ -12,10 +12,19 @@ import { createFlowMultilayerRenderer } from "../depth-flow/renderer/multilayer"
 import { clearCache, getCachedFile, saveCachedFile } from "../depth-flow/file-cache"
 
 
-const flowFile = signal<File | null>(null)
+const flowFile = signal<File | string | null>(null)
 
 
 const flowFileCacheUrl = "file://depth-flow-cache/last-flow.zip"
+
+
+const flowFileFromUrl = async (url: string) => {
+  const response = await fetch(url)
+  if (!response.ok)
+    throw new Error(`Failed to fetch flow file from ${url}`)
+  const blob = await response.blob()
+  return new File([blob], "flow.zip", { type: "application/zip" })
+}
 
 
 const {
@@ -24,7 +33,12 @@ const {
   fetch: createRenderer,
   reset: resetRenderer,
   error: creatingRendererError,
-} = asyncState(async (flowFile: Blob) => {
+} = asyncState(async (flowFile: Blob | string) => {
+
+  if (typeof flowFile === "string") {
+    flowFile = await flowFileFromUrl(flowFile)
+  }
+
   const flow = await loadFlowZip(flowFile)
 
   saveCachedFile(flowFileCacheUrl, flowFile)
@@ -73,6 +87,20 @@ export function clearLastFlowFileCache() {
 }
 
 
+
+const getFlowUrlFromSearchParams = () => {
+  const url = new URL(window.location.href)
+  const search = url.searchParams.get("flow-file")
+  if (!search)
+    return null
+  try {
+    return new URL(search).toString()
+  } catch (error) {
+    return null
+  }
+}
+
+const flowUrlFromSearch = getFlowUrlFromSearchParams()
 
 function CreateFlowRenderer() {
 
@@ -142,6 +170,16 @@ function CreateFlowRenderer() {
         {...getInputProps()}
       />
     </div>
+    {flowUrlFromSearch && (
+      <div className="btn btn-soft btn-primary w-full"
+        onClick={() => {
+          flowFile.value = flowUrlFromSearch
+          createRenderer(flowUrlFromSearch)
+        }}
+      >
+        Use the flow file from current URL
+      </div>
+    )}
     <div className="text-sm opacity-70">
       A new flow file can be created using an image under the Create tab
     </div>

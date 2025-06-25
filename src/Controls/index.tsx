@@ -50,7 +50,7 @@ function ControlsContent() {
   return (
     <motion.div
       className={clsx(
-        "fixed top-1/2 right-8 w-[20rem] h-full max-h-[32rem]",
+        "fixed top-1/2 left-4 right-4 md:left-auto md:right-8 md:w-[20rem] h-full max-h-[32rem]",
         "flex flex-col glass bg-white/50 dark:bg-gray-800/50 rounded"
       )}
       initial={{ x: "120%", y: "-50%" }}
@@ -84,7 +84,7 @@ function ControlsContent() {
 function ShowControlsButton() {
   return (
     <motion.div
-      className="fixed bottom-8 right-8 btn btn-circle"
+      className="fixed bottom-4 right-4 md:bottom-8 md:right-8 btn btn-circle"
       initial={{ x: "6rem" }}
       animate={{ x: "0" }}
       exit={{ x: "6rem" }}

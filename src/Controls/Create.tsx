@@ -129,6 +129,9 @@ function Download() {
     <div className="btn btn-soft btn-primary w-full" onClick={confirmDownload}>
       Download Models
     </div>
+    <div className="md:hidden text-sm opacity-70">
+      Running AI models on mobile devices is strongly discouraged. Try on desktop instead.
+    </div>
   </>
 }
 
@@ -245,8 +248,11 @@ function CreateFlow() {
         {...getInputProps()}
       />
     </div>
-    <div className="text-sm opacity-70">
+    <div className="hidden md:block text-sm opacity-70">
       Suggest 1080P images
+    </div>
+    <div className="md:hidden text-sm opacity-70">
+      Running AI models on mobile devices is strongly discouraged. Try on desktop instead.
     </div>
   </>
 }

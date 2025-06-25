@@ -103,6 +103,11 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
 }
 
 
+function clip(value: number) {
+  return Math.max(-1, Math.min(1, value))
+}
+
+
 export function Renderer() {
   const renderer = currentRenderer.value
 
@@ -110,8 +115,8 @@ export function Renderer() {
     const mouseMove = (e: MouseEvent | PointerEvent) => {
       const { innerWidth, innerHeight } = window
       const { clientX, clientY } = e
-      const x = (clientX / innerWidth) * 2 - 1
-      const y = (clientY / innerHeight) * 2 - 1
+      const x = clip((clientX / innerWidth) * 2 - 1)
+      const y = clip((clientY / innerHeight) * 2 - 1)
       centerMovementX.set(x)
       centerMovementY.set(y)
     }
@@ -119,7 +124,7 @@ export function Renderer() {
     const mouseWheel = (e: WheelEvent) => {
       const { deltaY } = e
       const value = centerMovementH.get()
-      const newValue = Math.max(-1, Math.min(1, value + deltaY / 400))
+      const newValue = clip(value + deltaY / 400)
       centerMovementH.set(newValue)
     }
 
@@ -127,12 +132,53 @@ export function Renderer() {
       shouldRender = true
     }
 
+    let calibrated = false
+    let centerX = 0
+    let centerY = 0
+
+    const onDeviceOrientation = (e: DeviceOrientationEvent) => {
+      const beta = e.beta || 0
+      const gamma = e.gamma || 0
+
+      const dx = gamma / 30
+      const dy = beta / 30
+
+      if (!calibrated) {
+        centerX = dx
+        centerY = dy
+        calibrated = true
+      }
+
+      let x = dx - centerX
+      let y = dy - centerY
+
+      if (x > 1) {
+        centerX = dx - 1
+        x = 1
+      } else if (x < -1) {
+        centerX = dx + 1
+        x = -1
+      }
+
+      if (y > 1) {
+        centerY = dy - 1
+        y = 1
+      } else if (y < -1) {
+        centerY = dy + 1
+        y = -1
+      }
+
+      centerMovementX.set(x)
+      centerMovementY.set(y)
+    }
 
     window.addEventListener("pointermove", mouseMove)
+    window.addEventListener("deviceorientation", onDeviceOrientation)
     window.addEventListener("wheel", mouseWheel)
     window.addEventListener("resize", resize)
     return () => {
       window.removeEventListener("pointermove", mouseMove)
+      window.removeEventListener("deviceorientation", onDeviceOrientation)
       window.removeEventListener("wheel", mouseWheel)
       window.removeEventListener("resize", resize)
     }
