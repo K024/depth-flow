@@ -1,6 +1,6 @@
 import type { FlowMultilayer } from "../types"
-import { loadImageFromBlob } from "../image/utils"
-import { calculateZoomScale, createFrameTimeCounter, createPlaneShaderProgram } from "./common"
+import { getImageData, loadImageFromBlob } from "../image/utils"
+import { calculateZoomScale, createBlurMipmap, createFrameTimeCounter, createPlaneShaderProgram } from "./common"
 import fragSrc from "./shaders/multilayer-frag.glsl?raw"
 
 
@@ -35,6 +35,10 @@ export async function createFlowMultilayerRenderer(canvas: HTMLCanvasElement, fl
     })
   }
 
+  const originalImage = await loadImageFromBlob(flow.originalImage)
+  const blurMipmap = await createBlurMipmap(getImageData(originalImage))
+  const blurMipmapTexture = createTexture(blurMipmap)
+
   const frameTimeCounter = createFrameTimeCounter()
 
   function render(args: FlowMultilayerRendererArgs) {
@@ -50,8 +54,10 @@ export async function createFlowMultilayerRenderer(canvas: HTMLCanvasElement, fl
       num_layers: layers.length,
       layers: layers.map(x => x.layer),
       depth_maps: layers.map(x => x.depth_map),
+      blur_mipmap: blurMipmapTexture,
       forward_steps: 120,
       backward_steps: 8,
+      edge_blur_threshold: 0.05,
     })
 
     const end = performance.now()

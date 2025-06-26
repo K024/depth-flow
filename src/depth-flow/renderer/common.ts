@@ -1,5 +1,6 @@
 import * as twgl from "twgl.js"
 import vertSrc from "./shaders/vert.glsl?raw"
+import { gaussianBlurImageData, scaleImageData } from "../image/utils"
 
 
 export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: string) {
@@ -91,6 +92,13 @@ export function createFrameTimeCounter(): FrameCounter {
     get totalRenders() { return totalRenders },
     get averageTime() { return totalTime / totalRenders },
   }
+}
+
+
+export async function createBlurMipmap(image: ImageData, size = 200, blurRadius = 20) {
+  const resized = await scaleImageData(image, size, size)
+  const blurred = await gaussianBlurImageData(resized, blurRadius)
+  return blurred
 }
 
 

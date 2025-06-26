@@ -88,7 +88,7 @@ export function clearLastFlowFileCache() {
 
 
 
-const getFlowUrlFromSearchParams = () => {
+const getSharedFlowUrlFromSearchParams = () => {
   const url = new URL(window.location.href)
   const search = url.searchParams.get("flow-file")
   if (!search)
@@ -100,7 +100,7 @@ const getFlowUrlFromSearchParams = () => {
   }
 }
 
-const flowUrlFromSearch = getFlowUrlFromSearchParams()
+const sharedFlowUrl = getSharedFlowUrlFromSearchParams()
 
 function CreateFlowRenderer() {
 
@@ -170,14 +170,14 @@ function CreateFlowRenderer() {
         {...getInputProps()}
       />
     </div>
-    {flowUrlFromSearch && (
+    {sharedFlowUrl && (
       <div className="btn btn-soft btn-primary w-full"
         onClick={() => {
-          flowFile.value = flowUrlFromSearch
-          createRenderer(flowUrlFromSearch)
+          flowFile.value = sharedFlowUrl
+          createRenderer(sharedFlowUrl)
         }}
       >
-        Use the flow file from current URL
+        Use the flow file from shared link
       </div>
     )}
     <div className="text-sm opacity-70">

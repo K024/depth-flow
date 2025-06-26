@@ -21,9 +21,11 @@ uniform vec2 camera_size;
 uniform int num_layers;
 uniform sampler2D layers[MAX_LAYERS];
 uniform sampler2D depth_maps[MAX_LAYERS];
+uniform sampler2D blur_mipmap;
 
 uniform int forward_steps;
 uniform int backward_steps;
+uniform float edge_blur_threshold;
 
 // common constants
 
@@ -56,10 +58,18 @@ make_position_depth(position_depth_4, 4)
 make_position_depth(position_depth_5, 5)
 
 
+float sdf_rect(vec2 position, vec2 half_size, float corner_radius) {
+  vec2 dxy = abs(position) - half_size + corner_radius;
+  return length(max(dxy, 0.0f)) + min(max(dxy.x, dxy.y), 0.0f) - corner_radius;
+}
+
 #define make_position_color(position_color_name, layer_idx) \
   vec4 position_color_name(vec3 pos) { \
     vec2 tex_coord = pos.xy * 0.5f + 0.5f; \
     vec4 sampl = texture(layers[layer_idx], tex_coord); \
+    float edge_distance = sdf_rect(pos.xy, vec2(1.f), edge_blur_threshold); \
+    vec4 blur_sampl = texture(blur_mipmap, pos.xy * (1.f - edge_blur_threshold * 3.f) * .5f + .5f); \
+    sampl = mix(sampl, blur_sampl, smoothstep(-edge_blur_threshold, 0.f, edge_distance)); \
     float alpha = texture(depth_maps[layer_idx], tex_coord).g; \
     return vec4(sampl.rgb, alpha); \
   }
