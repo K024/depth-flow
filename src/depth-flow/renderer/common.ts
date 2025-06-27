@@ -95,7 +95,7 @@ export function createFrameTimeCounter(): FrameCounter {
 }
 
 
-export async function createBlurMipmap(image: ImageData, size = 200, blurRadius = 20) {
+export async function createBlurMipmap(image: ImageData, size = 200, blurRadius = 10) {
   const resized = await scaleImageData(image, size, size)
   const blurred = await gaussianBlurImageData(resized, blurRadius)
   return blurred
