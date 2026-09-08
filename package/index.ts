@@ -4,18 +4,11 @@ export type {
   FlowConfig,
   FlowSimple,
   FlowSimpleConfig,
-  FlowMultilayer,
-  FlowMultilayerConfig,
 } from "../src/depth-flow/types"
 
 export {
   calculateZoomScale,
 } from "../src/depth-flow/renderer/common"
-
-export {
-  createFlowMultilayerRenderer,
-  type FlowMultilayerRendererArgs,
-} from "../src/depth-flow/renderer/multilayer"
 
 export {
   createFlowSimpleRenderer,

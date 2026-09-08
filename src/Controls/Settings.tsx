@@ -10,19 +10,6 @@ import { clearLastFlowFileCache } from "./Flow"
 
 export const depthMapDilateRadius = signal(4)
 
-// multilayer flow
-
-export const depthMapDilateRadius_m = signal(1)
-
-export const layerInpaintMaskDilateRadius = signal(8)
-export const layerInpaintMaskBlurRadius = signal(2)
-
-export const layerDepthMapDilateRadius = signal(6)
-export const layerDepthMapBlurRadius = signal(2)
-
-export const layerDisplayMaskBlurRadius = signal(2)
-export const boundOverlap = signal(8)
-
 
 function RangeFieldset({
   label, signal, min, max, step, description,
@@ -69,59 +56,6 @@ function SimpleFlowSettings() {
       signal={depthMapDilateRadius}
       min={0} max={20} step={1}
       description="Moves the depth edge outward to keep the border at the same depth with the object."
-    />
-  </>
-}
-
-function MultilayerFlowSettings() {
-  return <>
-    <div className="divider opacity-60 mb-0">Multilayer Flow</div>
-
-    <RangeFieldset
-      label="Depth Map Dilate Radius"
-      signal={depthMapDilateRadius_m}
-      min={0} max={20} step={1}
-      description="Same as above, but should be smaller as each layer will dilate its own depth map."
-    />
-
-    <RangeFieldset
-      label="Inpaint Mask Dilate Radius"
-      signal={layerInpaintMaskDilateRadius}
-      min={0} max={30} step={1}
-      description="Dilates the inpaint mask to fully cover the object when inpainting."
-    />
-    <RangeFieldset
-      label="Inpaint Mask Blur Radius"
-      signal={layerInpaintMaskBlurRadius}
-      min={0} max={10} step={1}
-      description="Blurs the inpaint mask to make the inpainting more natural."
-    />
-
-    <RangeFieldset
-      label="Depth Map Dilate Radius"
-      signal={layerDepthMapDilateRadius}
-      min={0} max={20} step={1}
-      description="Dilates on layer level to move the sharp edge outward the mask."
-    />
-    <RangeFieldset
-      label="Depth Map Blur Radius"
-      signal={layerDepthMapBlurRadius}
-      min={0} max={10} step={1}
-      description="Blurs the depth map on layer level."
-    />
-
-    <RangeFieldset
-      label="Display Mask Blur Radius"
-      signal={layerDisplayMaskBlurRadius}
-      min={0} max={10} step={1}
-      description="Blurs the display mask on layer level. This creates the transparent border between layers."
-    />
-
-    <RangeFieldset
-      label="Bound Overlap"
-      signal={boundOverlap}
-      min={0} max={10} step={1}
-      description="The overlap between the bounds of the layers for natural transition when the cut point is on a flat surface."
     />
   </>
 }
@@ -182,7 +116,6 @@ export function InnerSettings() {
           🚧 Still under development 🚧
         </div>
         <SimpleFlowSettings />
-        <MultilayerFlowSettings />
         <OtherSettings />
       </div>
     </motion.div>

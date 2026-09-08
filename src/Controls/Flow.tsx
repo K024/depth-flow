@@ -8,7 +8,6 @@ import { setBackground } from "../Canvas/Background"
 import { createFlowSimpleRenderer } from "../depth-flow/renderer/simple"
 import { loadFlowZip } from "../depth-flow/flow-file"
 import { setRenderer } from "../Canvas/Renderer"
-import { createFlowMultilayerRenderer } from "../depth-flow/renderer/multilayer"
 import { clearCache, getCachedFile, saveCachedFile } from "../depth-flow/file-cache"
 
 
@@ -47,11 +46,7 @@ const {
   canvas.width = 800
   canvas.height = 600
 
-  // const renderer = await createFlowSimpleRenderer(canvas, flow)
-
-  const renderer = "layers" in flow
-    ? await createFlowMultilayerRenderer(canvas, flow)
-    : await createFlowSimpleRenderer(canvas, flow)
+  const renderer = await createFlowSimpleRenderer(canvas, flow)
 
   setBackground(null)
   setRenderer({

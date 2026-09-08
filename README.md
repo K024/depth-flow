@@ -14,7 +14,7 @@ To use the `depth-flow` npm package, first create a flow zip file `depth-flow.zi
 
 
 ```ts
-import { loadFlowZip, createFlowMultilayerRenderer, createFlowSimpleRenderer } from "depth-flow"
+import { loadFlowZip, createFlowSimpleRenderer } from "depth-flow"
 import flowZipUrl from "./depth-flow.zip?url"
 
 async function main() {
@@ -22,9 +22,7 @@ async function main() {
   const blob = await fetch(flowZipUrl).then(res => res.blob())
   const flow = await loadFlowZip(blob)
 
-  const renderer = "layers" in flow
-    ? await createFlowMultilayerRenderer(canvas, flow)
-    : await createFlowSimpleRenderer(canvas, flow)
+  const renderer = await createFlowSimpleRenderer(canvas, flow)
 
   const origin: [number, number, number] = [0, 0, -30]
   const target: [number, number, number] = [0, 0, 0]

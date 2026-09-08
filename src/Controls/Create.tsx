@@ -5,14 +5,9 @@ import { signal } from "@preact/signals-react"
 import { useDropzone } from "react-dropzone"
 import { setBackground } from "../Canvas/Background"
 import { setRenderer } from "../Canvas/Renderer"
-import {
-  boundOverlap, depthMapDilateRadius, depthMapDilateRadius_m,
-  layerDepthMapBlurRadius, layerDepthMapDilateRadius,
-  layerDisplayMaskBlurRadius, layerInpaintMaskBlurRadius, layerInpaintMaskDilateRadius,
-} from "./Settings"
+import { depthMapDilateRadius } from "./Settings"
 import { humanSize, asyncState } from "./utils"
 import { checkAllModelsCached, downloadAllModels } from "../depth-flow/models/cache"
-// import { createMultilayerFlow, createSimpleFlow } from "../depth-flow/create-flow"
 import { downloadFile, lazy } from "../depth-flow/utils"
 import { createRenderer } from "./Flow"
 
@@ -52,35 +47,17 @@ const {
   loading: creatingFlow,
   error: createError,
   reset: resetCreate,
-} = asyncState(async (isSimple: boolean, file: File) => {
-  const { createSimpleFlow, createMultilayerFlow } = await createFlowModule()
-
-  let flowFile: File
-  if (isSimple) {
-    flowFile = await createSimpleFlow(
-      file,
-      {
-        depthMapDilateRadius: depthMapDilateRadius.value,
-      },
-      (message, p) => createProgress.value = [message, p]
-    )
-  } else {
-    flowFile = await createMultilayerFlow(
-      file,
-      {
-        depthMapDilateRadius: depthMapDilateRadius_m.value,
-        layerInpaintMaskDilateRadius: layerInpaintMaskDilateRadius.value,
-        layerInpaintMaskBlurRadius: layerInpaintMaskBlurRadius.value,
-        layerDepthMapDilateRadius: layerDepthMapDilateRadius.value,
-        layerDepthMapBlurRadius: layerDepthMapBlurRadius.value,
-        layerDisplayMaskBlurRadius: layerDisplayMaskBlurRadius.value,
-        boundOverlap: boundOverlap.value,
-      },
-      (message, p) => createProgress.value = [message, p]
-    )
-  }
+} = asyncState(async (file: File) => {
+  const { createSimpleFlow } = await createFlowModule()
+  const flowFile = await createSimpleFlow(
+    file,
+    {
+      depthMapDilateRadius: depthMapDilateRadius.value,
+    },
+    (message, p) => createProgress.value = [message, p]
+  )
   createRenderer(flowFile)
-  return { flowFile, isSimple }
+  return flowFile
 })
 
 const reset = () => {
@@ -127,7 +104,7 @@ function Download() {
   }
   return <>
     <div className="text-sm opacity-70">
-      Create a new depth flow requires downloading and caching several AI models (~400MB).
+      Creating a new depth flow requires downloading and caching AI models.
       This process will only be performed once.
     </div>
     <div className="btn btn-soft btn-primary w-full" onClick={confirmDownload}>
@@ -164,17 +141,17 @@ function CreateFlow() {
   if (flow) {
     return <>
       <div className="text-sm opacity-70">
-        Flow ({flow.isSimple ? "simple" : "multilayer"}) created successfully.
+        Flow created successfully.
         <br />
         Download the flow file to use it next time.
       </div>
       <div
         className="btn btn-soft btn-primary w-full"
         onClick={() => {
-          downloadFile(flow.flowFile)
+          downloadFile(flow)
         }}
       >
-        Download ({humanSize(flow.flowFile.size)})
+        Download ({humanSize(flow.size)})
       </div>
       <div
         className="btn btn-soft btn-secondary w-full"
@@ -217,18 +194,10 @@ function CreateFlow() {
       <div
         className="btn btn-soft btn-primary w-full"
         onClick={() => {
-          createDepthFlow(true, image)
+          createDepthFlow(image)
         }}
       >
-        Create Simple Depth Flow
-      </div>
-      <div
-        className="btn btn-soft btn-primary w-full"
-        onClick={() => {
-          createDepthFlow(false, image)
-        }}
-      >
-        Create Multilayer Depth Flow
+        Create Depth Flow
       </div>
       <div
         className="btn btn-soft btn-secondary w-full"

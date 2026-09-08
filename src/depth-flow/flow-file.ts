@@ -1,5 +1,5 @@
 import { zip, unzip, type Unzipped, type AsyncZippable } from "fflate"
-import type { Flow, FlowConfig, FlowMultilayer, FlowSimple } from "./types"
+import type { Flow, FlowConfig } from "./types"
 
 
 const configFileName = "depth-flow.json"
@@ -12,79 +12,33 @@ export async function loadFlowZip(zipFile: Blob): Promise<Flow> {
   if (!blobs[configFileName])
     throw new Error(`${configFileName} not found in zip file`)
 
-  const config = JSON.parse(await blobs[configFileName].text()) as FlowConfig
+  const parsedConfig = JSON.parse(await blobs[configFileName].text()) as Record<string, unknown>
+  if ("layers" in parsedConfig)
+    throw new Error("Legacy multilayer flow is no longer supported")
 
-  if ("layers" in config) {
+  const config = parsedConfig as unknown as FlowConfig
+  return {
+    originalImage: ensureBlob(blobs, config.originalImage),
+    originalDepthMap: ensureBlob(blobs, config.originalDepthMap),
+    width: config.width,
+    height: config.height,
 
-    const flow: FlowMultilayer = {
-      originalImage: ensureBlob(blobs, config.originalImage),
-      originalDepthMap: ensureBlob(blobs, config.originalDepthMap),
-      width: config.width,
-      height: config.height,
-
-      inpaintLayers: config.inpaintLayers,
-      inpaintDivisionPoints: config.inpaintBreakpoints,
-
-      layers: config.layers.map(layer => ({
-        image: ensureBlob(blobs, layer.image),
-        depthMap: ensureBlob(blobs, layer.depthMap),
-      })),
-
-      processedBy: config.processedBy,
-      processArgs: config.processArgs,
-    }
-
-    return flow
-
-  } else {
-
-    const flow: FlowSimple = {
-      originalImage: ensureBlob(blobs, config.originalImage),
-      originalDepthMap: ensureBlob(blobs, config.originalDepthMap),
-      width: config.width,
-      height: config.height,
-
-      processedBy: config.processedBy,
-      processArgs: config.processArgs,
-    }
-
-    return flow
+    processedBy: config.processedBy,
+    processArgs: config.processArgs,
   }
 }
 
 
 export async function saveFlowZip(flow: Flow): Promise<File> {
 
-  let config: FlowConfig
+  const config: FlowConfig = {
+    originalImage: `image.${getBlobNameExtension(flow.originalImage, "png")}`,
+    originalDepthMap: `depth-map.png`,
+    width: flow.width,
+    height: flow.height,
 
-  if ("layers" in flow) {
-    config = {
-      originalImage: `image.${getBlobNameExtension(flow.originalImage, "png")}`,
-      originalDepthMap: `depth-map.png`,
-      width: flow.width,
-      height: flow.height,
-
-      inpaintLayers: flow.inpaintLayers,
-      inpaintBreakpoints: flow.inpaintDivisionPoints,
-
-      layers: flow.layers.map((layer, index) => ({
-        image: `layer-${index + 1}.png`,
-        depthMap: `layer-${index + 1}-depth-map.png`,
-      })),
-
-      processedBy: flow.processedBy,
-      processArgs: flow.processArgs,
-    }
-  } else {
-    config = {
-      originalImage: `image.${getBlobNameExtension(flow.originalImage, "png")}`,
-      originalDepthMap: `depth-map.png`,
-      width: flow.width,
-      height: flow.height,
-
-      processedBy: flow.processedBy,
-      processArgs: flow.processArgs,
-    }
+    processedBy: flow.processedBy,
+    processArgs: flow.processArgs,
   }
 
   const configBlob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" })
@@ -93,13 +47,6 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
     [config.originalImage]: flow.originalImage,
     [config.originalDepthMap]: flow.originalDepthMap,
     [configFileName]: configBlob,
-  }
-
-  if ("layers" in config && "layers" in flow) {
-    for (const [index, layer] of config.layers.entries()) {
-      filesToZip[layer.image] = flow.layers[index].image
-      filesToZip[layer.depthMap] = flow.layers[index].depthMap
-    }
   }
 
   return zipBlobs(filesToZip)
