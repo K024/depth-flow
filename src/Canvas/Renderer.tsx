@@ -109,7 +109,7 @@ function clip(value: number) {
 
 
 export function Renderer() {
-  const renderer = currentRenderer.value
+  const renderer = currentRenderer.useValue()
 
   useEffect(() => {
     const mouseMove = (e: MouseEvent | PointerEvent) => {

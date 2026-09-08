@@ -93,16 +93,20 @@ const reset = () => {
 // components
 
 function Download() {
+  const isDownloading = downloading.useValue()
+  const error = downloadError.useValue()
+  const progress = downloadProgress.useValue()
+
   const confirmDownload = () => {
-    if (!downloading.value) {
+    if (!isDownloading) {
       downloadModels((message, value) => downloadProgress.value = [message, value])
         .then(checkModelsAgain)
     }
   }
-  if (downloadError.value) {
+  if (error) {
     return <>
       <div className="alert alert-soft alert-error">
-        {downloadError.value.message}
+        {error.message}
       </div>
       <div
         className="btn btn-soft btn-secondary w-full"
@@ -112,8 +116,8 @@ function Download() {
       </div>
     </>
   }
-  if (downloading.value) {
-    const [message, value] = downloadProgress.value || ["Downloading models", undefined]
+  if (isDownloading) {
+    const [message, value] = progress || ["Downloading models", undefined]
     return <>
       <div className="alert alert-soft alert-primary">
         {message}
@@ -138,6 +142,11 @@ function Download() {
 
 
 function CreateFlow() {
+  const flow = flowFile.useValue()
+  const error = createError.useValue()
+  const isCreatingFlow = creatingFlow.useValue()
+  const progress = createProgress.useValue()
+  const image = selectedImage.useValue()
 
   const { getRootProps, getInputProps, isDragAccept, isDragReject } = useDropzone({
     accept: {
@@ -147,12 +156,11 @@ function CreateFlow() {
       if (!files.length)
         return
       selectedImage.value = files[0]
-      setBackground(selectedImage.value)
+      setBackground(files[0])
       setRenderer(undefined)
     },
   })
 
-  const flow = flowFile.value
   if (flow) {
     return <>
       <div className="text-sm opacity-70">
@@ -176,10 +184,10 @@ function CreateFlow() {
       </div>
     </>
   }
-  if (createError.value) {
+  if (error) {
     return <>
       <div className="alert alert-soft alert-error">
-        {createError.value.message}
+        {error.message}
       </div>
       <div
         className="btn btn-soft btn-primary w-full"
@@ -189,8 +197,8 @@ function CreateFlow() {
       </div>
     </>
   }
-  if (creatingFlow.value) {
-    const [message, value] = createProgress.value || ["Creating flow", undefined]
+  if (isCreatingFlow) {
+    const [message, value] = progress || ["Creating flow", undefined]
     return <>
       <div className="text-sm opacity-70">
         Creating a new flow requires heavy computation, and may cause page to temporarily freeze.
@@ -201,16 +209,15 @@ function CreateFlow() {
       <progress className="progress progress-info w-full" value={value} max="100"></progress>
     </>
   }
-  if (selectedImage.value) {
+  if (image) {
     return <>
       <div className="alert alert-soft alert-primary text-center break-all">
-        {selectedImage.value.name} ({humanSize(selectedImage.value.size)})
+        {image.name} ({humanSize(image.size)})
       </div>
       <div
         className="btn btn-soft btn-primary w-full"
         onClick={() => {
-          if (!selectedImage.value) return
-          createDepthFlow(true, selectedImage.value)
+          createDepthFlow(true, image)
         }}
       >
         Create Simple Depth Flow
@@ -218,8 +225,7 @@ function CreateFlow() {
       <div
         className="btn btn-soft btn-primary w-full"
         onClick={() => {
-          if (!selectedImage.value) return
-          createDepthFlow(false, selectedImage.value)
+          createDepthFlow(false, image)
         }}
       >
         Create Multilayer Depth Flow
@@ -260,6 +266,7 @@ function CreateFlow() {
 
 
 export function Create() {
+  const modelsCached = allModelsCached.useValue()
 
   useEffect(() => {
     checkModelsAgain()
@@ -272,8 +279,8 @@ export function Create() {
       animate={{ filter: "blur(0px)", opacity: 1 }}
       exit={{ filter: "blur(4px)", opacity: 0, z: -1 }}
     >
-      {allModelsCached.value === false && <Download />}
-      {allModelsCached.value === true && <CreateFlow />}
+      {modelsCached === false && <Download />}
+      {modelsCached === true && <CreateFlow />}
     </motion.div>
   )
 }

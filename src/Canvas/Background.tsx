@@ -30,7 +30,7 @@ export function setBackground(file: Blob | null) {
 
 
 export function Background() {
-  const bg = currentBackground.value
+  const bg = currentBackground.useValue()
   return (
     <AnimatePresence>
       {bg && (

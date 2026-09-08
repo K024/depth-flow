@@ -1,4 +1,5 @@
-import { Signal, signal } from "@preact/signals-react"
+import { signal } from "@preact/signals-react"
+import type { Signal } from "@preact/signals-react"
 import { motion } from "motion/react"
 import { clearCache } from "../depth-flow/file-cache"
 import { clearModelCache } from "../depth-flow/models/cache"
@@ -33,6 +34,8 @@ function RangeFieldset({
   step: number
   description: string
 }) {
+  const value = signal.useValue()
+
   return (
     <fieldset className="fieldset text-left">
       <legend className="fieldset-legend">{label}</legend>
@@ -40,13 +43,13 @@ function RangeFieldset({
         <input
           type="range" min={min} max={max} step={step}
           className="range range-sm"
-          value={signal.value}
+          value={value}
           onChange={(e) => {
             signal.value = parseInt(e.target.value)
           }}
         />
         <div className="text-sm w-6">
-          {signal.value}
+          {value}
         </div>
       </div>
       <p className="label whitespace-break-spaces">

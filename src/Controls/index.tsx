@@ -14,6 +14,8 @@ const hideControls = signal(false)
 
 
 function Tabs() {
+  const activeTab = currentTab.useValue()
+
   return (
     <div role="tablist" className="relative tabs tabs-border">
       {tabs.map((tab) => (
@@ -23,7 +25,7 @@ function Tabs() {
           aria-label={tab}
           className={clsx(
             "tab flex-1",
-            currentTab.value === tab && "tab-active"
+            activeTab === tab && "tab-active"
           )}
           onClick={() => currentTab.value = tab}
         >
@@ -36,11 +38,13 @@ function Tabs() {
 
 
 function TabContent() {
+  const activeTab = currentTab.useValue()
+
   return (
     <AnimatePresence>
-      {currentTab.value === "Flow" && <Flow key="flow" />}
-      {currentTab.value === "Create" && <Create key="create" />}
-      {currentTab.value === "Settings" && <InnerSettings key="settings" />}
+      {activeTab === "Flow" && <Flow key="flow" />}
+      {activeTab === "Create" && <Create key="create" />}
+      {activeTab === "Settings" && <InnerSettings key="settings" />}
     </AnimatePresence>
   )
 }
@@ -100,11 +104,13 @@ function ShowControlsButton() {
 
 
 export function Controls() {
+  const isHidden = hideControls.useValue()
+
   useLastFlowFileWhenInit()
   return (
     <AnimatePresence>
-      {!hideControls.value && <ControlsContent key="controls" />}
-      {hideControls.value && <ShowControlsButton key="show-controls" />}
+      {!isHidden && <ControlsContent key="controls" />}
+      {isHidden && <ShowControlsButton key="show-controls" />}
     </AnimatePresence>
   )
 }

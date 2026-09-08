@@ -131,7 +131,7 @@ async function zipBlobs(blobs: Record<string, Blob>): Promise<File> {
     zipEntries[key] = new Uint8Array(await value.arrayBuffer())
   }
 
-  const zipData = await new Promise<Uint8Array>((res, rej) => {
+  const zipData = await new Promise<Uint8Array<ArrayBuffer>>((res, rej) => {
     zip(zipEntries, (err, data) => {
       if (err) rej(err)
       else res(data)
@@ -154,7 +154,7 @@ async function unzipBlob(blob: Blob) {
   const blobs: Record<string, Blob> = {}
 
   for (const [key, value] of Object.entries(zipEntries)) {
-    blobs[key] = new Blob([value])
+    blobs[key] = new Blob([value as Uint8Array<ArrayBuffer>])
   }
 
   return blobs

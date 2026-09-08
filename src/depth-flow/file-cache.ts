@@ -25,7 +25,7 @@ export async function downloadWithProgress(url: string, callback?: ProgressCallb
   let loaded = 0
 
   const reader = response.body!.getReader()
-  const chunks: Uint8Array[] = []
+  const chunks: Uint8Array<ArrayBuffer>[] = []
 
   while (true) {
     const { done, value } = await reader.read()

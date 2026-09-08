@@ -75,8 +75,9 @@ export function useLastFlowFileWhenInit() {
   useEffect(() => {
     getCachedFile(flowFileCacheUrl).then((file) => {
       if (file) {
-        flowFile.value = new File([file], "last-flow.zip", { type: "application/zip" })
-        createRenderer(flowFile.value)
+        const cachedFlowFile = new File([file], "last-flow.zip", { type: "application/zip" })
+        flowFile.value = cachedFlowFile
+        createRenderer(cachedFlowFile)
       }
     })
   }, [])
@@ -103,6 +104,9 @@ const getSharedFlowUrlFromSearchParams = () => {
 const sharedFlowUrl = getSharedFlowUrlFromSearchParams()
 
 function CreateFlowRenderer() {
+  const rendererValue = renderer.useValue()
+  const isCreatingRenderer = creatingRenderer.useValue()
+  const rendererError = creatingRendererError.useValue()
 
   const { getRootProps, getInputProps, isDragAccept, isDragReject } = useDropzone({
     accept: {
@@ -112,14 +116,14 @@ function CreateFlowRenderer() {
       if (!files.length)
         return
       flowFile.value = files[0]
-      createRenderer(flowFile.value)
+      createRenderer(files[0])
     },
   })
 
-  if (creatingRendererError.value) {
+  if (rendererError) {
     return <>
       <div className="alert alert-soft alert-error">
-        {creatingRendererError.value.message}
+        {rendererError.message}
       </div>
       <div
         className="btn btn-soft btn-primary w-full"
@@ -130,7 +134,7 @@ function CreateFlowRenderer() {
     </>
   }
 
-  if (creatingRenderer.value) {
+  if (isCreatingRenderer) {
     return <>
       <div className="alert alert-soft alert-primary">
         Creating renderer...
@@ -139,10 +143,10 @@ function CreateFlowRenderer() {
     </>
   }
 
-  if (renderer.value) {
+  if (rendererValue) {
     return <>
       <div className="text-sm opacity-70">
-        Renderer ({renderer.value.type}) created successfully.
+        Renderer ({rendererValue.type}) created successfully.
         <br />
         Move your mouse around and zoom in/out with the mouse wheel to see the flow effect.
       </div>

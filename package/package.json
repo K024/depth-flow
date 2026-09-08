@@ -6,17 +6,18 @@
   "homepage": "https://depth-flow.pages.dev",
   "repository": "github:K024/depth-flow",
   "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/cjs/package/index.cjs",
+  "module": "./dist/esm/package/index.mjs",
+  "types": "./dist/types/package/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "types": "./dist/types/package/index.d.ts",
+      "import": "./dist/esm/package/index.mjs",
+      "require": "./dist/cjs/package/index.cjs"
     }
   },
   "dependencies": {
-    "fflate": "^0.8.2",
-    "twgl.js": "^6.1.1"
+    "fflate": "^0.8.3",
+    "twgl.js": "^7.0.0"
   }
 }
