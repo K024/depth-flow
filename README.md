@@ -14,7 +14,11 @@ To use the `depth-flow` npm package, first create a flow zip file `depth-flow.zi
 
 
 ```ts
-import { loadFlowZip, createFlowSimpleRenderer } from "depth-flow"
+import {
+  loadFlowZip,
+  createFlowSimpleRenderer,
+  flowSimpleRendererPresets,
+} from "depth-flow"
 import flowZipUrl from "./depth-flow.zip?url"
 
 async function main() {
@@ -22,7 +26,10 @@ async function main() {
   const blob = await fetch(flowZipUrl).then(res => res.blob())
   const flow = await loadFlowZip(blob)
 
-  const renderer = await createFlowSimpleRenderer(canvas, flow)
+  const renderer = await createFlowSimpleRenderer(canvas, flow, {
+    forwardSteps: 120,
+    backwardSteps: 8,
+  })
 
   const origin: [number, number, number] = [0, 0, -30]
   const target: [number, number, number] = [0, 0, 0]
@@ -70,6 +77,22 @@ Render params details:
 | `origin` | `[number, number, number]` | Camera position in 3D space. The x and y components can be controlled by pointer movement, and z can be controlled by mouse wheel |
 | `target` | `[number, number, number]` | Look-at target point. Fixed at `[0,0,0]` to look at the center of the scene |
 | `zoomScale` | `number` | Controls the zoom level/field of view. A value smaller than 1 to ensure the scene covers all the visible parts |
+
+Renderer creation options:
+
+| Parameter | Range | Default | Description |
+|-----------|-------|---------|-------------|
+| `forwardSteps` | `16–256` | `120` | Controls primary ray-marching quality and GPU cost |
+| `backwardSteps` | `1–16` | `8` | Controls hit refinement quality |
+
+Built-in presets are exported as `flowSimpleRendererPresets`:
+
+```ts
+const renderer = await createFlowSimpleRenderer(canvas, flow, "performance")
+```
+
+Available presets: `performance` (`64/4`), `balanced` (`120/8`), and `quality` (`180/12`).
+Preset objects remain available through `flowSimpleRendererPresets` for reuse or extension.
 
 
 The whole scene is inside the box from `[-1,-1,-1]` to `[1,1,1]`, and the bottom sits on the plane at `[x,y,1]`. The camera is expected to locate at a position with negative `z` value and look down through the z axis.

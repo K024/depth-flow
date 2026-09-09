@@ -6,12 +6,15 @@ import { useDropzone } from "react-dropzone"
 import { asyncState } from "./utils"
 import { setBackground } from "../Canvas/Background"
 import { createFlowSimpleRenderer } from "../depth-flow/renderer/simple"
+import type { FlowSimpleRendererPreset } from "../depth-flow/renderer/simple"
 import { loadFlowZip } from "../depth-flow/flow-file"
 import { setRenderer } from "../Canvas/Renderer"
 import { clearCache, getCachedFile, saveCachedFile } from "../depth-flow/file-cache"
 
 
 const flowFile = signal<File | string | null>(null)
+export const rendererPreset = signal<FlowSimpleRendererPreset>("balanced")
+let rendererFlowFile: Blob | string | null = null
 
 
 const flowFileCacheUrl = "file://depth-flow-cache/last-flow.zip"
@@ -33,6 +36,7 @@ const {
   reset: resetRenderer,
   error: creatingRendererError,
 } = asyncState(async (flowFile: Blob | string) => {
+  rendererFlowFile = flowFile
 
   if (typeof flowFile === "string") {
     flowFile = await flowFileFromUrl(flowFile)
@@ -46,7 +50,7 @@ const {
   canvas.width = 800
   canvas.height = 600
 
-  const renderer = await createFlowSimpleRenderer(canvas, flow)
+  const renderer = await createFlowSimpleRenderer(canvas, flow, rendererPreset.value)
 
   setBackground(null)
   setRenderer({
@@ -61,10 +65,20 @@ const {
 
 const reset = () => {
   flowFile.value = null
+  rendererFlowFile = null
   resetRenderer()
 }
 
 export { createRenderer }
+
+export function setRendererPreset(preset: FlowSimpleRendererPreset) {
+  if (rendererPreset.value === preset)
+    return
+
+  rendererPreset.value = preset
+  if (rendererFlowFile)
+    createRenderer(rendererFlowFile)
+}
 
 export function useLastFlowFileWhenInit() {
   useEffect(() => {

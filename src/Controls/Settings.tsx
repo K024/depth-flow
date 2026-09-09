@@ -1,9 +1,12 @@
+import clsx from "clsx"
 import { signal } from "@preact/signals-react"
 import type { Signal } from "@preact/signals-react"
 import { motion } from "motion/react"
 import { clearCache } from "../depth-flow/file-cache"
 import { clearModelCache } from "../depth-flow/models/cache"
-import { clearLastFlowFileCache } from "./Flow"
+import { clearLastFlowFileCache, rendererPreset, setRendererPreset } from "./Flow"
+import { flowSimpleRendererPresets } from "../depth-flow/renderer/simple"
+import type { FlowSimpleRendererPreset } from "../depth-flow/renderer/simple"
 
 
 // simple flow
@@ -57,6 +60,41 @@ function SimpleFlowSettings() {
       min={0} max={20} step={1}
       description="Moves the depth edge outward to keep the border at the same depth with the object."
     />
+  </>
+}
+
+function RendererSettings() {
+  const preset = rendererPreset.useValue()
+
+  return <>
+    <div className="divider opacity-60 mb-0">Renderer</div>
+
+    <fieldset className="fieldset text-left">
+      <legend className="fieldset-legend">Quality Preset</legend>
+      <div className="join grid grid-cols-3 w-full">
+        {Object.entries(flowSimpleRendererPresets).map(([name, options]) => (
+          <button
+            key={name}
+            type="button"
+            className={clsx(
+              "btn btn-sm join-item",
+              preset === name ? "btn-primary" : "btn-soft",
+            )}
+            onClick={() => {
+              setRendererPreset(name as FlowSimpleRendererPreset)
+            }}
+          >
+            <span>{name[0].toUpperCase() + name.slice(1)}</span>
+            <span className="badge badge-sm badge-ghost">
+              {options.forwardSteps}/{options.backwardSteps}
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="label whitespace-break-spaces">
+        Recreates current renderer immediately. Higher quality uses more GPU time.
+      </p>
+    </fieldset>
   </>
 }
 
@@ -116,6 +154,7 @@ export function InnerSettings() {
           🚧 Still under development 🚧
         </div>
         <SimpleFlowSettings />
+        <RendererSettings />
         <OtherSettings />
       </div>
     </motion.div>
