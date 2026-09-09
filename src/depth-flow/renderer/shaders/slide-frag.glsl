@@ -15,9 +15,11 @@ uniform vec2 camera_zoom_scale; // [1, 1]
 
 uniform vec2 image_size;
 
-uniform sampler2D image;
-uniform sampler2D depth_map;
-uniform sampler2D blur_mipmap;
+uniform sampler2D top_image;
+uniform sampler2D bottom_image;
+uniform sampler2D layer_map; // r: top depth, g: top alpha, b: bottom depth
+uniform sampler2D top_blur_mipmap;
+uniform sampler2D bottom_blur_mipmap;
 uniform sampler2D depth_bounds;
 uniform float depth_bounds_max_lod;
 
@@ -38,9 +40,14 @@ vec2 position_uv(vec3 pos) {
   return pos.xy * 0.5f + 0.5f;
 }
 
-float position_depth(vec3 pos) {
-  vec4 sampl = texture(depth_map, position_uv(pos));
+float top_position_depth(vec3 pos) {
+  vec4 sampl = texture(layer_map, position_uv(pos));
   return 1.f - sampl.r * 2.f; // 0 ~ 1 to 1 ~ -1
+}
+
+float bottom_position_depth(vec3 pos) {
+  vec4 sampl = texture(layer_map, position_uv(pos));
+  return 1.f - sampl.b * 2.f; // 0 ~ 1 to 1 ~ -1
 }
 
 vec2 ray_depth_bounds(vec3 near_point, vec3 far_point) {
@@ -60,7 +67,7 @@ vec2 ray_depth_bounds(vec3 near_point, vec3 far_point) {
 
   vec2 bounds = textureLod(depth_bounds, uv_mid, selected_lod).rg;
 
-  // Texture depth 1 is world Z -1 (near); texture depth 0 is world Z +1 (far).
+  // Bounds include both layers. Texture depth 1 is world Z -1 (near).
   return vec2(1.f - 2.f * bounds.g, 1.f - 2.f * bounds.r);
 }
 
@@ -69,11 +76,26 @@ float sdf_rect(vec2 position, vec2 half_size, float corner_radius) {
   return length(max(dxy, 0.f)) + min(max(dxy.x, dxy.y), 0.f) - corner_radius;
 }
 
-vec4 position_color(vec3 pos) {
+vec4 top_position_color(vec3 pos) {
   vec2 tex_coord = position_uv(pos);
-  vec4 sampl = texture(image, tex_coord);
+  vec4 sampl = texture(top_image, tex_coord);
   float edge_distance = sdf_rect(pos.xy, vec2(1.f), edge_blur_threshold);
-  vec4 blur_sampl = texture(blur_mipmap, pos.xy * (1.f - edge_blur_threshold * 3.f) * .5f + .5f);
+  vec4 blur_sampl = texture(
+    top_blur_mipmap,
+    pos.xy * (1.f - edge_blur_threshold * 3.f) * 0.5f + 0.5f
+  );
+  sampl = mix(sampl, blur_sampl, smoothstep(-edge_blur_threshold, 0.f, edge_distance));
+  return sampl;
+}
+
+vec4 bottom_position_color(vec3 pos) {
+  vec2 tex_coord = position_uv(pos);
+  vec4 sampl = texture(bottom_image, tex_coord);
+  float edge_distance = sdf_rect(pos.xy, vec2(1.f), edge_blur_threshold);
+  vec4 blur_sampl = texture(
+    bottom_blur_mipmap,
+    pos.xy * (1.f - edge_blur_threshold * 3.f) * 0.5f + 0.5f
+  );
   sampl = mix(sampl, blur_sampl, smoothstep(-edge_blur_threshold, 0.f, edge_distance));
   return sampl;
 }
@@ -115,25 +137,57 @@ void ray_marching(vec3 near_point, vec3 far_point, out vec4 current_color, out v
   );
   ray_position = search_start_position - forward_step;
 
-  // forward iterations
+  // top forward iterations
   for(int it = 0; it < search_steps; it += 1) {
     ray_position += forward_step;
-    float depth = position_depth(ray_position);
-    if(ray_position.z > depth) { // we reached the depth boundary
+    float depth = top_position_depth(ray_position);
+    if(ray_position.z > depth) {
       break;
     }
   }
 
-  // backward iterations
+  // top backward iterations
   for(int it = 0; it <= backward_steps; it += 1) {
     ray_position += backward_step;
-    float depth = position_depth(ray_position);
-    if(ray_position.z < depth) { // a small step out of boundary
+    float depth = top_position_depth(ray_position);
+    if(ray_position.z < depth) {
       break;
     }
   }
 
-  current_color = position_color(ray_position);
+  vec4 top_color = top_position_color(ray_position);
+  float top_visibility = texture(layer_map, position_uv(ray_position)).g;
+  float top_alpha = top_color.a * top_visibility;
+
+  // Most pixels are opaque; avoid second ray search away from depth edges.
+  if (top_alpha >= 1.f - 0.5f / 255.f) {
+    current_color = top_color;
+    return;
+  }
+
+  // Rewind before Top so equal Top/Bottom depths can still cross and hit Bottom.
+  ray_position -= forward_step;
+
+  // bottom forward iterations
+  for(int it = 0; it < search_steps; it += 1) {
+    ray_position += forward_step;
+    float depth = bottom_position_depth(ray_position);
+    if(ray_position.z > depth) {
+      break;
+    }
+  }
+
+  // bottom backward iterations
+  for(int it = 0; it <= backward_steps; it += 1) {
+    ray_position += backward_step;
+    float depth = bottom_position_depth(ray_position);
+    if(ray_position.z < depth) {
+      break;
+    }
+  }
+
+  vec4 bottom_color = bottom_position_color(ray_position);
+  current_color = mix(bottom_color, top_color, top_alpha);
 }
 
 void main() {

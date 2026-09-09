@@ -1,5 +1,5 @@
 import { zip, unzip, type Unzipped, type AsyncZippable } from "fflate"
-import type { Flow, FlowConfig } from "./types"
+import type { Flow, FlowConfig, FlowSimpleConfig, FlowSlideConfig } from "./types"
 
 
 const configFileName = "depth-flow.json"
@@ -16,8 +16,28 @@ export async function loadFlowZip(zipFile: Blob): Promise<Flow> {
   if ("layers" in parsedConfig)
     throw new Error("Legacy multilayer flow is no longer supported")
 
+  if (parsedConfig.type === "slide" && parsedConfig.version !== 1)
+    throw new Error(`Unsupported SLIDE flow version: ${String(parsedConfig.version)}`)
+
   const config = parsedConfig as unknown as FlowConfig
+  if (config.type === "slide") {
+    return {
+      type: "slide",
+      version: 1,
+      originalImage: ensureBlob(blobs, config.originalImage),
+      originalDepthMap: ensureBlob(blobs, config.originalDepthMap),
+      bottomImage: ensureBlob(blobs, config.bottomImage),
+      layerMap: ensureBlob(blobs, config.layerMap),
+      width: config.width,
+      height: config.height,
+      processedBy: config.processedBy,
+      processArgs: config.processArgs,
+    }
+  }
+
   return {
+    type: "simple",
+    version: 1,
     originalImage: ensureBlob(blobs, config.originalImage),
     originalDepthMap: ensureBlob(blobs, config.originalDepthMap),
     width: config.width,
@@ -30,8 +50,33 @@ export async function loadFlowZip(zipFile: Blob): Promise<Flow> {
 
 
 export async function saveFlowZip(flow: Flow): Promise<File> {
+  if (flow.type === "slide") {
+    const config: FlowSlideConfig = {
+      type: "slide",
+      version: 1,
+      originalImage: `image.${getBlobNameExtension(flow.originalImage, "png")}`,
+      originalDepthMap: "depth-map.png",
+      bottomImage: "bottom-image.png",
+      layerMap: "layer-map.png",
+      width: flow.width,
+      height: flow.height,
+      processedBy: flow.processedBy,
+      processArgs: flow.processArgs,
+    }
+    const configBlob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" })
+    const filesToZip: Record<string, Blob> = {
+      [config.originalImage]: flow.originalImage,
+      [config.originalDepthMap]: flow.originalDepthMap,
+      [config.bottomImage]: flow.bottomImage,
+      [config.layerMap]: flow.layerMap,
+      [configFileName]: configBlob,
+    }
+    return zipBlobs(filesToZip, "slide-flow.zip")
+  }
 
-  const config: FlowConfig = {
+  const config: FlowSimpleConfig = {
+    type: "simple",
+    version: 1,
     originalImage: `image.${getBlobNameExtension(flow.originalImage, "png")}`,
     originalDepthMap: `depth-map.png`,
     width: flow.width,
@@ -49,7 +94,7 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
     [configFileName]: configBlob,
   }
 
-  return zipBlobs(filesToZip)
+  return zipBlobs(filesToZip, "depth-flow.zip")
 }
 
 
@@ -71,7 +116,7 @@ function getBlobNameExtension(blob: Blob, fallback: string) {
   return fallback
 }
 
-async function zipBlobs(blobs: Record<string, Blob>): Promise<File> {
+async function zipBlobs(blobs: Record<string, Blob>, fileName: string): Promise<File> {
   const zipEntries: AsyncZippable = {}
 
   for (const [key, value] of Object.entries(blobs)) {
@@ -85,7 +130,7 @@ async function zipBlobs(blobs: Record<string, Blob>): Promise<File> {
     })
   })
 
-  return new File([zipData], "depth-flow.zip")
+  return new File([zipData], fileName)
 }
 
 async function unzipBlob(blob: Blob) {

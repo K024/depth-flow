@@ -4,7 +4,7 @@ export interface DepthBoundsLevel {
   data: Uint8Array
 }
 
-function createBaseLevel(depthMap: ImageData): DepthBoundsLevel {
+function createBaseLevel(depthMap: ImageData, channels: number[]): DepthBoundsLevel {
   const { width, height, data: source } = depthMap
   const data = new Uint8Array(width * height * 2)
 
@@ -21,9 +21,12 @@ function createBaseLevel(depthMap: ImageData): DepthBoundsLevel {
         const y = Math.max(0, Math.min(height - 1, imageY + dy))
         for (let dx = -1; dx <= 1; dx++) {
           const sampleX = Math.max(0, Math.min(width - 1, x + dx))
-          const depth = source[(y * width + sampleX) * 4]
-          minDepth = Math.min(minDepth, depth)
-          maxDepth = Math.max(maxDepth, depth)
+          const sourceIndex = (y * width + sampleX) * 4
+          for (const channel of channels) {
+            const depth = source[sourceIndex + channel]
+            minDepth = Math.min(minDepth, depth)
+            maxDepth = Math.max(maxDepth, depth)
+          }
         }
       }
 
@@ -96,8 +99,11 @@ function addCellHalo(level: DepthBoundsLevel): DepthBoundsLevel {
   return { width, height, data }
 }
 
-export function createDepthBoundsHierarchy(depthMap: ImageData) {
-  const rawLevels = [createBaseLevel(depthMap)]
+export function createDepthBoundsHierarchy(depthMap: ImageData, channels: number[] = [0]) {
+  if (channels.length === 0 || channels.some(channel => channel < 0 || channel > 3))
+    throw new Error("Depth bounds channels must contain RGBA channel indexes")
+
+  const rawLevels = [createBaseLevel(depthMap, channels)]
 
   while (rawLevels[rawLevels.length - 1].width > 1 || rawLevels[rawLevels.length - 1].height > 1)
     rawLevels.push(createNextLevel(rawLevels[rawLevels.length - 1]))

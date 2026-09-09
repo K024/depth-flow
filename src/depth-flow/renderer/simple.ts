@@ -87,13 +87,13 @@ export async function createFlowSimpleRenderer(
   const depthBoundsTexture = createDepthBoundsTexture(gl, depthBoundsHierarchy)
 
   function render(args: FlowSimpleRendererArgs) {
-    const cameraSize = beforeFrameRender()
+    const _cameraSize = beforeFrameRender()
     renderWithUniforms({
       camera_position: args.origin,
       camera_target_center: args.target,
       camera_zoom_scale: calculateZoomScale(canvas.width, canvas.height, width, height, args.zoomScale),
       image_size: [width, height],
-      camera_size: cameraSize,
+      // camera_size: cameraSize,
       image: imageTexture,
       depth_map: depthMapTexture,
       blur_mipmap: blurMipmapTexture,

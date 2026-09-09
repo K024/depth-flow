@@ -7,6 +7,7 @@ import { asyncState } from "./utils"
 import { setBackground } from "../Canvas/Background"
 import { createFlowSimpleRenderer } from "../depth-flow/renderer/simple"
 import type { FlowSimpleRendererPreset } from "../depth-flow/renderer/simple"
+import { createFlowSlideRenderer } from "../depth-flow/renderer/slide"
 import { loadFlowZip } from "../depth-flow/flow-file"
 import { setRenderer } from "../Canvas/Renderer"
 import { clearCache, getCachedFile, saveCachedFile } from "../depth-flow/file-cache"
@@ -50,7 +51,9 @@ const {
   canvas.width = 800
   canvas.height = 600
 
-  const renderer = await createFlowSimpleRenderer(canvas, flow, rendererPreset.value)
+  const renderer = flow.type === "slide"
+    ? await createFlowSlideRenderer(canvas, flow, rendererPreset.value)
+    : await createFlowSimpleRenderer(canvas, flow, rendererPreset.value)
 
   setBackground(null)
   setRenderer({

@@ -96,6 +96,18 @@ export async function scaleImageData(imageData: ImageData, width: number, height
   return scaledImageData
 }
 
+export async function scaleImageDataNearest(imageData: ImageData, width: number, height: number) {
+  const { ctx } = getCanvas(width, height)
+  ctx.imageSmoothingEnabled = false
+  const imageBitmap = await createImageBitmap(imageData)
+  ctx.drawImage(
+    imageBitmap,
+    0, 0, imageData.width, imageData.height,
+    0, 0, width, height,
+  )
+  return ctx.getImageData(0, 0, width, height)
+}
+
 
 export const maxFilter = (a: number, b: number) => a > b ? a : b
 export const minFilter = (a: number, b: number) => a < b ? a : b

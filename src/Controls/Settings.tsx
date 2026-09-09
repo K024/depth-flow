@@ -13,6 +13,17 @@ import type { FlowSimpleRendererPreset } from "../depth-flow/renderer/simple"
 
 export const depthMapDilateRadius = signal(4)
 
+// slide flow
+
+export const slideAnalysisResolution = signal(512)
+export const slideVisibilityBeta = signal(300)
+export const slideDisocclusionRho = signal(1)
+export const slideDisocclusionGamma = signal(10)
+export const slideDisocclusionRadius = signal(64)
+export const slideRepairThreshold = signal(0.5)
+export const slideRepairDilateRadius = signal(4)
+export const slideBottomDepthEpsilon = signal(0.01)
+
 
 function RangeFieldset({
   label, signal, min, max, step, description,
@@ -35,7 +46,7 @@ function RangeFieldset({
           className="range range-sm"
           value={value}
           onChange={(e) => {
-            signal.value = parseInt(e.target.value)
+            signal.value = Number(e.target.value)
           }}
         />
         <div className="text-sm w-6">
@@ -47,6 +58,67 @@ function RangeFieldset({
       </p>
     </fieldset>
   )
+}
+
+function SlideFlowSettings() {
+  return <>
+    <div className="divider opacity-60 mb-0">SLIDE Flow</div>
+
+    <RangeFieldset
+      label="Depth Map Dilate Radius"
+      signal={depthMapDilateRadius}
+      min={0} max={20} step={1}
+      description="Moves the Top depth edge outward before visibility and disocclusion analysis."
+    />
+    <RangeFieldset
+      label="Analysis Resolution"
+      signal={slideAnalysisResolution}
+      min={64} max={512} step={32}
+      description="Long-side resolution used for soft-layering diagnostics."
+    />
+    <RangeFieldset
+      label="Visibility Beta"
+      signal={slideVisibilityBeta}
+      min={0} max={500} step={5}
+      description="Controls transparency near disparity discontinuities."
+    />
+    <RangeFieldset
+      label="Disocclusion Rho"
+      signal={slideDisocclusionRho}
+      min={0} max={5} step={0.05}
+      description="Penalizes distant scan-line candidates in normalized image coordinates."
+    />
+    <RangeFieldset
+      label="Disocclusion Gamma"
+      signal={slideDisocclusionGamma}
+      min={0} max={50} step={0.5}
+      description="Controls soft disocclusion response steepness."
+    />
+    <RangeFieldset
+      label="Disocclusion Radius"
+      signal={slideDisocclusionRadius}
+      min={1} max={128} step={1}
+      description="Horizontal and vertical scan radius at analysis resolution."
+    />
+    <RangeFieldset
+      label="Repair Threshold"
+      signal={slideRepairThreshold}
+      min={0.05} max={0.95} step={0.05}
+      description="Converts soft disocclusion into binary LaMa repair mask."
+    />
+    <RangeFieldset
+      label="Repair Dilate Radius"
+      signal={slideRepairDilateRadius}
+      min={0} max={32} step={1}
+      description="Safety dilation in analysis-resolution pixels."
+    />
+    <RangeFieldset
+      label="Bottom Depth Epsilon"
+      signal={slideBottomDepthEpsilon}
+      min={0} max={0.1} step={0.005}
+      description="Minimum normalized disparity gap placing Bottom behind Top."
+    />
+  </>
 }
 
 
@@ -154,6 +226,7 @@ export function InnerSettings() {
           🚧 Still under development 🚧
         </div>
         <SimpleFlowSettings />
+        <SlideFlowSettings />
         <RendererSettings />
         <OtherSettings />
       </div>

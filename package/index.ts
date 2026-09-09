@@ -4,6 +4,8 @@ export type {
   FlowConfig,
   FlowSimple,
   FlowSimpleConfig,
+  FlowSlide,
+  FlowSlideConfig,
 } from "../src/depth-flow/types"
 
 export {
@@ -17,5 +19,13 @@ export {
   type FlowSimpleRendererOptions,
   type FlowSimpleRendererPreset,
 } from "../src/depth-flow/renderer/simple"
+
+export {
+  createFlowSlideRenderer,
+  flowSlideRendererPresets,
+  type FlowSlideRendererArgs,
+  type FlowSlideRendererOptions,
+  type FlowSlideRendererPreset,
+} from "../src/depth-flow/renderer/slide"
 
 export { loadFlowZip, saveFlowZip } from "../src/depth-flow/flow-file"

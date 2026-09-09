@@ -1,6 +1,8 @@
 
 
 export interface FlowSimpleConfig {
+  type?: "simple"
+  version?: 1
   originalImage: string
   originalDepthMap: string
   width: number
@@ -10,10 +12,22 @@ export interface FlowSimpleConfig {
   processArgs: Record<string, any>
 }
 
-export type FlowConfig = FlowSimpleConfig
+export interface FlowSlideConfig extends Pick<
+  FlowSimpleConfig,
+  "originalImage" | "originalDepthMap" | "width" | "height" | "processedBy" | "processArgs"
+> {
+  type: "slide"
+  version: 1
+  bottomImage: string
+  layerMap: string
+}
+
+export type FlowConfig = FlowSimpleConfig | FlowSlideConfig
 
 
 export interface FlowSimple {
+  type: "simple"
+  version: 1
   originalImage: Blob
   originalDepthMap: Blob
   width: number
@@ -23,4 +37,21 @@ export interface FlowSimple {
   processArgs: Record<string, any>
 }
 
-export type Flow = FlowSimple
+export interface FlowSlide extends Pick<
+  FlowSimple,
+  "originalImage" | "originalDepthMap" | "width" | "height" | "processedBy" | "processArgs"
+> {
+  type: "slide"
+  version: 1
+  bottomImage: Blob
+  /**
+   * RGB packed data:
+   * R = top depth/disparity
+   * G = top visibility
+   * B = bottom depth/disparity
+   * A = 255
+   */
+  layerMap: Blob
+}
+
+export type Flow = FlowSimple | FlowSlide

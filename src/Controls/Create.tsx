@@ -5,7 +5,17 @@ import { signal } from "@preact/signals-react"
 import { useDropzone } from "react-dropzone"
 import { setBackground } from "../Canvas/Background"
 import { setRenderer } from "../Canvas/Renderer"
-import { depthMapDilateRadius } from "./Settings"
+import {
+  depthMapDilateRadius,
+  slideAnalysisResolution,
+  slideBottomDepthEpsilon,
+  slideDisocclusionGamma,
+  slideDisocclusionRadius,
+  slideDisocclusionRho,
+  slideRepairDilateRadius,
+  slideRepairThreshold,
+  slideVisibilityBeta,
+} from "./Settings"
 import { humanSize, asyncState } from "./utils"
 import { checkAllModelsCached, downloadAllModels } from "../depth-flow/models/cache"
 import { downloadFile, lazy } from "../depth-flow/utils"
@@ -60,8 +70,36 @@ const {
   return flowFile
 })
 
+const {
+  data: slideFlowFile,
+  fetch: createSlideFlow,
+  loading: creatingSlideFlow,
+  error: createSlideError,
+  reset: resetCreateSlide,
+} = asyncState(async (file: File) => {
+  const { createSlideFlow } = await createFlowModule()
+  const flowFile = await createSlideFlow(
+    file,
+    {
+      analysisResolution: slideAnalysisResolution.value,
+      visibilityBeta: slideVisibilityBeta.value,
+      disocclusionRho: slideDisocclusionRho.value,
+      disocclusionGamma: slideDisocclusionGamma.value,
+      disocclusionRadius: slideDisocclusionRadius.value,
+      repairThreshold: slideRepairThreshold.value,
+      repairDilateRadius: slideRepairDilateRadius.value,
+      depthMapDilateRadius: depthMapDilateRadius.value,
+      bottomDepthEpsilon: slideBottomDepthEpsilon.value,
+    },
+    (message, p) => createProgress.value = [message, p],
+  )
+  createRenderer(flowFile)
+  return flowFile
+})
+
 const reset = () => {
   resetCreate()
+  resetCreateSlide()
   createProgress.value = undefined
   selectedImage.value = null
 }
@@ -121,7 +159,10 @@ function Download() {
 function CreateFlow() {
   const flow = flowFile.useValue()
   const error = createError.useValue()
+  const slideError = createSlideError.useValue()
   const isCreatingFlow = creatingFlow.useValue()
+  const isCreatingSlideFlow = creatingSlideFlow.useValue()
+  const slideFlow = slideFlowFile.useValue()
   const progress = createProgress.useValue()
   const image = selectedImage.useValue()
 
@@ -161,10 +202,31 @@ function CreateFlow() {
       </div>
     </>
   }
-  if (error) {
+  if (slideFlow) {
+    return <>
+      <div className="alert alert-soft alert-success">
+        SLIDE Flow created. Processing artifacts remain available in browser console.
+      </div>
+      <div
+        className="btn btn-soft btn-accent w-full"
+        onClick={() => {
+          downloadFile(slideFlow)
+        }}
+      >
+        Download SLIDE Flow ({humanSize(slideFlow.size)})
+      </div>
+      <div
+        className="btn btn-soft btn-secondary w-full"
+        onClick={reset}
+      >
+        Create another flow
+      </div>
+    </>
+  }
+  if (error || slideError) {
     return <>
       <div className="alert alert-soft alert-error">
-        {error.message}
+        {(error || slideError)?.message}
       </div>
       <div
         className="btn btn-soft btn-primary w-full"
@@ -174,7 +236,7 @@ function CreateFlow() {
       </div>
     </>
   }
-  if (isCreatingFlow) {
+  if (isCreatingFlow || isCreatingSlideFlow) {
     const [message, value] = progress || ["Creating flow", undefined]
     return <>
       <div className="text-sm opacity-70">
@@ -197,7 +259,15 @@ function CreateFlow() {
           createDepthFlow(image)
         }}
       >
-        Create Depth Flow
+        Create Simple Flow
+      </div>
+      <div
+        className="btn btn-soft btn-accent w-full"
+        onClick={() => {
+          createSlideFlow(image)
+        }}
+      >
+        Create SLIDE Flow
       </div>
       <div
         className="btn btn-soft btn-secondary w-full"
