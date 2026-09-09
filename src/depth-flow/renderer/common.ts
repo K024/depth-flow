@@ -5,12 +5,16 @@ import { gaussianBlurImageData, scaleImageData } from "../image/utils"
 
 export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: string) {
 
-  const gl = twgl.getContext(canvas, {
+  const context = canvas.getContext("webgl2", {
     alpha: true,
     antialias: true,
   })
+  if (!context)
+    throw new Error("WebGL2 is not supported")
+  const gl: WebGL2RenderingContext = context
 
   const program = twgl.createProgramInfo(gl, [vertSrc, fragSrc])
+  const drawCallTimer = createGpuDrawCallTimer(gl)
 
   const plane = new Float32Array([
     -1, -1, -1, 1, 1, 1,
@@ -41,7 +45,9 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
   function renderWithUniforms(uniforms: Record<string, any>) {
     gl.useProgram(program.program)
     twgl.setUniforms(program, uniforms)
+    drawCallTimer.begin()
     twgl.drawBufferInfo(gl, buffers)
+    drawCallTimer.end()
   }
 
 
@@ -63,34 +69,127 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
     beforeFrameRender,
     renderWithUniforms,
     createTexture,
+    drawCallTimer,
   }
 }
 
 
 export interface FrameCounter {
-  render: (time: number) => void
+  poll: () => void
   reset: () => void
+  supported: boolean
   totalTime: number
   totalRenders: number
   averageTime: number
+  p95Time: number
+  p99Time: number
 }
 
-export function createFrameTimeCounter(): FrameCounter {
+interface DisjointTimerQueryWebGL2 {
+  readonly TIME_ELAPSED_EXT: number
+  readonly GPU_DISJOINT_EXT: number
+}
+
+interface PendingGpuQuery {
+  query: WebGLQuery
+  generation: number
+}
+
+export function createGpuDrawCallTimer(gl: WebGL2RenderingContext): FrameCounter & {
+  begin: () => void
+  end: () => void
+} {
+  const ext = gl.getExtension("EXT_disjoint_timer_query_webgl2") as DisjointTimerQueryWebGL2 | null
+  if (!ext)
+    console.warn("EXT_disjoint_timer_query_webgl2 is unavailable; GPU draw-call timing is disabled")
+
+  const maxPendingQueries = 64
+  const pendingQueries: PendingGpuQuery[] = []
+  let activeQuery: WebGLQuery | null = null
+  let samples: number[] = []
   let totalTime = 0
-  let totalRenders = 0
+  let generation = 0
+
+  function discardPendingQueries() {
+    if (activeQuery) {
+      gl.endQuery(ext!.TIME_ELAPSED_EXT)
+      gl.deleteQuery(activeQuery)
+      activeQuery = null
+    }
+    for (const { query } of pendingQueries)
+      gl.deleteQuery(query)
+    pendingQueries.length = 0
+  }
+
+  function poll() {
+    if (!ext)
+      return
+
+    if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+      discardPendingQueries()
+      return
+    }
+
+    while (pendingQueries.length > 0) {
+      const pending = pendingQueries[0]
+      const available = gl.getQueryParameter(pending.query, gl.QUERY_RESULT_AVAILABLE) as boolean
+      if (!available)
+        break
+
+      const elapsedNanoseconds = gl.getQueryParameter(pending.query, gl.QUERY_RESULT) as number
+      gl.deleteQuery(pending.query)
+      pendingQueries.shift()
+
+      if (pending.generation !== generation)
+        continue
+
+      const elapsedMilliseconds = elapsedNanoseconds / 1_000_000
+      samples.push(elapsedMilliseconds)
+      totalTime += elapsedMilliseconds
+    }
+  }
+
+  function percentile(percent: number) {
+    if (samples.length === 0)
+      return 0
+    const sorted = [...samples].sort((a, b) => a - b)
+    const index = Math.ceil(percent * sorted.length) - 1
+    return sorted[Math.max(0, index)]
+  }
 
   return {
-    render: (time: number) => {
-      totalTime += time
-      totalRenders += 1
+    supported: ext !== null,
+    begin: () => {
+      poll()
+      if (!ext || activeQuery || pendingQueries.length >= maxPendingQueries)
+        return
+
+      const query = gl.createQuery()
+      if (!query)
+        return
+
+      gl.beginQuery(ext.TIME_ELAPSED_EXT, query)
+      activeQuery = query
+    },
+    end: () => {
+      if (!ext || !activeQuery)
+        return
+
+      gl.endQuery(ext.TIME_ELAPSED_EXT)
+      pendingQueries.push({ query: activeQuery, generation })
+      activeQuery = null
     },
     reset: () => {
+      generation += 1
+      samples = []
       totalTime = 0
-      totalRenders = 0
     },
+    poll,
     get totalTime() { return totalTime },
-    get totalRenders() { return totalRenders },
-    get averageTime() { return totalTime / totalRenders },
+    get totalRenders() { return samples.length },
+    get averageTime() { return samples.length > 0 ? totalTime / samples.length : 0 },
+    get p95Time() { return percentile(0.95) },
+    get p99Time() { return percentile(0.99) },
   }
 }
 

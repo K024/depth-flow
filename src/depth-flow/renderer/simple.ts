@@ -1,6 +1,6 @@
 import type { FlowSimple } from "../types"
 import { getImageData, loadImageFromBlob } from "../image/utils"
-import { calculateZoomScale, createBlurMipmap, createFrameTimeCounter, createPlaneShaderProgram } from "./common"
+import { calculateZoomScale, createBlurMipmap, createPlaneShaderProgram } from "./common"
 import fragSrc from "./shaders/simple-frag.glsl?raw"
 
 
@@ -20,6 +20,7 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
     beforeFrameRender,
     renderWithUniforms,
     createTexture,
+    drawCallTimer,
   } = createPlaneShaderProgram(canvas, fragSrc)
 
   const { width, height } = flow
@@ -32,11 +33,7 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
   const depthMapTexture = createTexture(originalDepthMap)
   const blurMipmapTexture = createTexture(blurMipmap)
 
-  const frameTimeCounter = createFrameTimeCounter()
-
   function render(args: FlowSimpleRendererArgs) {
-    const start = performance.now()
-
     const cameraSize = beforeFrameRender()
     renderWithUniforms({
       camera_position: args.origin,
@@ -51,17 +48,12 @@ export async function createFlowSimpleRenderer(canvas: HTMLCanvasElement, flow: 
       backward_steps: 8,
       edge_blur_threshold: 0.05,
     })
-
-    const end = performance.now()
-    const duration = end - start
-    frameTimeCounter.render(duration)
-    return duration
   }
 
 
   return {
     type: "simple" as const,
     render,
-    frameTimeCounter,
+    frameTimeCounter: drawCallTimer,
   }
 }

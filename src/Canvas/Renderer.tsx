@@ -9,7 +9,7 @@ import type { FrameCounter } from "../depth-flow/renderer/common"
 
 const currentRenderer = signal<{
   key: string
-  render: (args: FlowSimpleRendererArgs) => number
+  render: (args: FlowSimpleRendererArgs) => void
   frameCounter: FrameCounter
   canvas: HTMLCanvasElement
 }>()
@@ -59,6 +59,7 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
     let animationFrame: number | null = null
     function frame() {
       animationFrame = requestAnimationFrame(frame)
+      frameCounter.poll()
 
       if (!shouldRender) return
       shouldRender = false
@@ -72,7 +73,10 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
         zoomScale: defaultZoomScale,
       })
       if (frameCounter.totalRenders >= 1000) {
-        console.log(`Frame average time: ${frameCounter.averageTime.toFixed(2)} ms`)
+        console.log(
+          `GPU draw-call time: average ${frameCounter.averageTime.toFixed(2)} ms, ` +
+          `P95 ${frameCounter.p95Time.toFixed(2)} ms, P99 ${frameCounter.p99Time.toFixed(2)} ms`
+        )
         frameCounter.reset()
       }
     }
