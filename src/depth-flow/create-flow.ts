@@ -9,8 +9,7 @@ import {
   circularDilateGrayscale,
   cloneImageData,
   gaussianBlurImageData,
-  getImageData,
-  loadImageFromBlob,
+  getImageDataFromBlob,
   saveImageData,
   scaleImageData,
 } from "./image/utils"
@@ -43,7 +42,12 @@ import { repairBottomDepth, type BottomDepthRepairArgs } from "./slide/depth-rep
 import { packSlideLayerMap } from "./slide/layer-map"
 import { createSoftLayeringDiagnostics, type SoftLayeringArgs } from "./slide/soft-layering"
 import type { FlowSimple, FlowSlide } from "./types"
-import { error, frame, lazyPromise, type ProgressReporter } from "./utils"
+import {
+  delay,
+  error,
+  lazyPromise,
+  type ProgressReporter,
+} from "./utils"
 
 
 
@@ -73,22 +77,20 @@ export interface SimpleFlowArgs {
 
 async function simpleProcess(
   image: Blob,
+  suppliedDepthMap: Blob | undefined,
   args: Required<SimpleFlowArgs>,
   progress?: ProgressReporter,
-  suppliedDepthMap?: Blob,
 ) {
   progress?.("Loading image")
-  await frame()
+  await delay(0)
 
-  const imageElement = await loadImageFromBlob(image)
-  const imageData = getImageData(imageElement)
+  const imageData = await getImageDataFromBlob(image)
 
   if (suppliedDepthMap) {
     progress?.("Loading supplied depth map")
-    await frame()
+    await delay(0)
 
-    const depthMapElement = await loadImageFromBlob(suppliedDepthMap)
-    const suppliedDepthMapData = getImageData(depthMapElement)
+    const suppliedDepthMapData = await getImageDataFromBlob(suppliedDepthMap)
     if (
       suppliedDepthMapData.width !== imageData.width
       || suppliedDepthMapData.height !== imageData.height
@@ -100,7 +102,7 @@ async function simpleProcess(
     }
 
     progress?.("Preparing supplied depth map")
-    await frame()
+    await delay(0)
 
     const { image: normalizedDepthMap, normalization } = normalizeDepthMap(suppliedDepthMapData)
     // Keep SLIDE analysis on same compact grid used for model-generated maps.
@@ -122,21 +124,21 @@ async function simpleProcess(
   }
 
   progress?.("Loading depth model")
-  await frame()
+  await delay(0)
 
   const depthModelSession = await cachedDepthModelSession()
 
   const scaledImageData = await resizeImageForDepthModel(imageData)
 
   progress?.("Running depth model")
-  await frame()
+  await delay(0)
 
   const imageTensor = tensorFromImageData(scaledImageData, true)
   const depthTensor = await inferDepthModelSession(depthModelSession, imageTensor)
   const depthMap = tensorToGrayscaleImageData(depthTensor, true)
 
   progress?.("Post-processing depth map")
-  await frame()
+  await delay(0)
 
   const scaledBackDepthMap = await scaleImageData(depthMap, imageData.width, imageData.height)
   const dilatedDepthMap = args.depthMapDilateRadius >= 1
@@ -146,7 +148,7 @@ async function simpleProcess(
     : scaledBackDepthMap
 
   if (args.depthMapDilateRadius >= 1) {
-    console.log(`dilatedDepthMap`)
+    console.log("dilatedDepthMap")
     await consoleLogImageData(dilatedDepthMap)
   }
 
@@ -161,9 +163,9 @@ async function simpleProcess(
 
 export async function createSimpleFlow(
   image: Blob,
+  suppliedDepthMap?: Blob,
   args?: SimpleFlowArgs,
   progress?: ProgressReporter,
-  suppliedDepthMap?: Blob,
 ) {
 
   const normalizedArgs: Required<SimpleFlowArgs> = {
@@ -174,11 +176,11 @@ export async function createSimpleFlow(
     imageData,
     dilatedDepthMap,
     depthMapNormalization,
-  } = await simpleProcess(image, normalizedArgs, progress, suppliedDepthMap)
+  } = await simpleProcess(image, suppliedDepthMap, normalizedArgs, progress)
   const depthMapBlob = await saveImageData(dilatedDepthMap, "image/png")
 
   progress?.("Making flow file")
-  await frame()
+  await delay(0)
 
   const flow: FlowSimple = {
     type: "simple",
@@ -210,9 +212,9 @@ export interface SlideFlowArgs extends SoftLayeringArgs, RepairMaskArgs, BottomD
 
 export async function createSlideFlow(
   image: Blob,
+  suppliedDepthMap: Blob | undefined,
   args: SlideFlowArgs,
   progress?: ProgressReporter,
-  suppliedDepthMap?: Blob,
 ) {
   // E is the recovered disparity step and never exceeds ~0.30 on real depth
   // maps (measured: 0.30 on a depth-anything-v2 map, 0.19 on a supplied one).
@@ -249,13 +251,13 @@ export async function createSlideFlow(
     depthMapNormalization,
   } = await simpleProcess(
     image,
+    suppliedDepthMap,
     { depthMapDilateRadius: 0 },
     progress,
-    suppliedDepthMap,
   )
 
   progress?.("Computing SLIDE soft layering")
-  await frame()
+  await delay(0)
 
   // poolRadius and blurSigma are quoted in reference-grid pixels and have to be
   // carried to whatever grid simpleProcess actually produced. This is what
@@ -351,7 +353,6 @@ export async function createSlideFlow(
     ["finalTopVisibility", topVisibility],
   ] as const
 
-  console.group("SLIDE soft-layering diagnostics")
   console.log("parameters", normalizedArgs)
   console.log("resolved for analysis grid", {
     analysisGrid: [depthMap.width, depthMap.height],
@@ -361,7 +362,7 @@ export async function createSlideFlow(
     disocclusionGamma: diagnostics.disocclusionGamma,
     softDisocclusionThreshold: diagnostics.softDisocclusionThreshold,
   })
-  console.table(diagnostics.stats)
+  console.log("soft-layering stats", diagnostics.stats)
   for (const [name, imageData] of images) {
     console.log(`${name} (${imageData.width}x${imageData.height})`)
     await consoleLogImageData(imageData)
@@ -375,14 +376,14 @@ export async function createSlideFlow(
   let bottomImage = imageData
   if (repairMasks.dilatedRepairRatio > 0) {
     progress?.("Running LaMa background inpaint")
-    await frame()
+    await delay(0)
 
     const inpaintSession = await cachedInpaintModelSession()
     const preparedInputs = await prepareImageAndMasksForInpaint(
       imageData,
       repairMasks.fullResolutionRepairMask,
     )
-    console.table(preparedInputs.map((prepared, index) => ({
+    console.log("inpaint crops", preparedInputs.map((prepared, index) => ({
       crop: index,
       x: prepared.cropX,
       y: prepared.cropY,
@@ -393,7 +394,7 @@ export async function createSlideFlow(
     const restoredOutput = new ImageData(imageData.width, imageData.height)
     for (let index = 0; index < preparedInputs.length; index++) {
       progress?.(`Running LaMa background inpaint (${index + 1}/${preparedInputs.length})`)
-      await frame()
+      await delay(0)
       const prepared = preparedInputs[index]
       const imageTensor = tensorFromImageData(prepared.image, false)
       const maskTensor = tensorFromImageDataChannel(prepared.mask, "r", false)
@@ -414,7 +415,7 @@ export async function createSlideFlow(
   }
 
   progress?.("Building SLIDE depth layers")
-  await frame()
+  await delay(0)
 
   const fullResolutionFarReference = await scaleImageData(
     diagnostics.farReferenceImage,
@@ -440,10 +441,9 @@ export async function createSlideFlow(
   const layerMap = packSlideLayerMap(topDepthMap, topVisibility, bottomDepthMap)
   console.log("layerMap RGB = topDepth / topVisibility / bottomDepth")
   await consoleLogImageData(layerMap)
-  console.groupEnd()
 
   progress?.("Making SLIDE flow file")
-  await frame()
+  await delay(0)
 
   // layer-map R is the rendered Top depth and is directly compatible with the
   // Simple shader's red-channel depth lookup. Reuse this packed image for

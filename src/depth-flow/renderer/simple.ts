@@ -1,5 +1,5 @@
 import type { FlowSimple } from "../types"
-import { getImageData, loadImageFromBlob } from "../image/utils"
+import { getImageDataFromBlob } from "../image/utils"
 import { calculateZoomScale, createBlurMipmap, createPlaneShaderProgram } from "./common"
 import { createDepthBoundsHierarchy, createDepthBoundsTexture } from "./depth-bounds-hierarchy"
 import fragSrc from "./shaders/simple-frag.glsl?raw"
@@ -75,16 +75,13 @@ export async function createFlowSimpleRenderer(
 
   const { width, height } = flow
 
-  const originalImage = await loadImageFromBlob(flow.originalImage)
-  const originalDepthMap = await loadImageFromBlob(flow.originalDepthMap)
-  const originalDepthMapData = getImageData(originalDepthMap)
-  const blurMipmap = await createBlurMipmap(getImageData(originalImage))
-  const depthBoundsHierarchy = createDepthBoundsHierarchy(originalDepthMapData)
+  const originalImage = await getImageDataFromBlob(flow.originalImage)
+  const originalDepthMap = await getImageDataFromBlob(flow.originalDepthMap)
+  const blurMipmap = await createBlurMipmap(originalImage)
+  const depthBoundsHierarchy = createDepthBoundsHierarchy(originalDepthMap)
 
   const imageTexture = createTexture(originalImage)
-  // Depth is numeric data, so upload decoded pixels just like the SLIDE layer
-  // map instead of allowing image-element color conversion during upload.
-  const depthMapTexture = createTexture(originalDepthMapData)
+  const depthMapTexture = createTexture(originalDepthMap)
   const blurMipmapTexture = createTexture(blurMipmap)
   const depthBoundsTexture = createDepthBoundsTexture(gl, depthBoundsHierarchy)
 

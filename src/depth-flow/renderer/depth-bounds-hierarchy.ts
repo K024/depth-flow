@@ -9,7 +9,7 @@ function createBaseLevel(depthMap: ImageData, channels: number[]): DepthBoundsLe
   const data = new Uint8Array(width * height * 2)
 
   for (let textureY = 0; textureY < height; textureY++) {
-    // Match depth_map, which is uploaded from a DOM image with flipY enabled.
+    // Match depth_map, which is uploaded from decoded ImageData with flipY enabled.
     const imageY = height - 1 - textureY
 
     for (let x = 0; x < width; x++) {

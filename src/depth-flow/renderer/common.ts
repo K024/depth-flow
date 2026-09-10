@@ -51,7 +51,7 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
   }
 
 
-  function createTexture(src: TexImageSource) {
+  function createTexture(src: ImageData) {
     return twgl.createTexture(gl, {
       src,
       wrap: gl.CLAMP_TO_EDGE,

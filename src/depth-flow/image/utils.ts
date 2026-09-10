@@ -1,15 +1,18 @@
 
-export function getCanvas(width: number, height: number) {
-  let canvas
-  if (typeof document !== undefined) {
-    canvas = document.createElement("canvas")
-    canvas.width = width
-    canvas.height = height
-  } else {
-    throw new Error("Unable to create canvas")
-  }
+type ImageCanvas = HTMLCanvasElement | OffscreenCanvas
+type ImageCanvasContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 
-  const ctx = canvas.getContext("2d")
+export function getCanvas(width: number, height: number): {
+  canvas: ImageCanvas
+  ctx: ImageCanvasContext
+} {
+  const canvas = typeof document !== "undefined"
+    ? document.createElement("canvas")
+    : new OffscreenCanvas(width, height)
+  canvas.width = width
+  canvas.height = height
+
+  const ctx = canvas.getContext("2d") as ImageCanvasContext | null
   if (!ctx)
     throw new Error("Failed to get canvas context")
 
@@ -17,47 +20,39 @@ export function getCanvas(width: number, height: number) {
 }
 
 
-export function loadImage(url: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error("Failed to load image"))
-    image.src = url
-  })
-}
-
-
-export async function loadImageFromBlob(blob: Blob) {
-  const url = URL.createObjectURL(blob)
-  try {
-    return await loadImage(url)
-  } finally {
-    URL.revokeObjectURL(url)
-  }
-}
-
-
-export function getImageData(image: HTMLImageElement) {
-  if (!image.complete) {
-    throw new Error("Image is not loaded")
-  }
+export function getImageData(image: CanvasImageSource & { width: number, height: number }) {
   const { ctx } = getCanvas(image.width, image.height)
   ctx.drawImage(image, 0, 0)
   return ctx.getImageData(0, 0, image.width, image.height)
+}
+
+export async function getImageDataFromBlob(blob: Blob) {
+  const image = await createImageBitmap(blob)
+  try {
+    return getImageData(image)
+  } finally {
+    image.close()
+  }
 }
 
 
 export async function saveImageData(imageData: ImageData, type: string = "image/png", quality?: number) {
   const { canvas, ctx } = getCanvas(imageData.width, imageData.height)
   const imageBitmap = await createImageBitmap(imageData)
-  ctx.drawImage(imageBitmap, 0, 0)
+  try {
+    ctx.drawImage(imageBitmap, 0, 0)
+  } finally {
+    imageBitmap.close()
+  }
+  if (canvas instanceof OffscreenCanvas)
+    return canvas.convertToBlob({ type, quality })
+
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
-      if (blob) {
+      if (blob)
         resolve(blob)
-      } else {
+      else
         reject(new Error("Failed to save image"))
-      }
     }, type, quality)
   })
 }

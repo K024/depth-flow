@@ -18,11 +18,12 @@ import {
 } from "./Settings"
 import { humanSize, asyncState } from "./utils"
 import { checkAllModelsCached, downloadAllModels } from "../depth-flow/models/cache"
-import { downloadFile, lazy } from "../depth-flow/utils"
+import { downloadFile } from "../depth-flow/utils"
 import { createRenderer } from "./Flow"
-
-
-const createFlowModule = lazy(() => import("../depth-flow/create-flow"))
+import {
+  createSimpleFlowInWorker,
+  createSlideFlowInWorker,
+} from "../depth-flow/create-worker-client"
 const imageAccept = {
   "image/*": [".png", ".jpg", ".jpeg", ".webp"],
 }
@@ -63,14 +64,13 @@ const {
   error: createError,
   reset: resetCreate,
 } = asyncState(async (file: File, depthMap?: File) => {
-  const { createSimpleFlow } = await createFlowModule()
-  const flowFile = await createSimpleFlow(
+  const flowFile = await createSimpleFlowInWorker(
     file,
+    depthMap,
     {
       depthMapDilateRadius: depthMapDilateRadius.value,
     },
     (message, p) => createProgress.value = [message, p],
-    depthMap,
   )
   createRenderer(flowFile)
   return flowFile
@@ -83,9 +83,9 @@ const {
   error: createSlideError,
   reset: resetCreateSlide,
 } = asyncState(async (file: File, depthMap?: File) => {
-  const { createSlideFlow } = await createFlowModule()
-  const flowFile = await createSlideFlow(
+  const flowFile = await createSlideFlowInWorker(
     file,
+    depthMap,
     {
       poolRadius: slidePoolRadius.value,
       blurSigma: slideBlurSigma.value,
@@ -97,7 +97,6 @@ const {
       bottomDepthEpsilon: slideBottomDepthEpsilon.value,
     },
     (message, p) => createProgress.value = [message, p],
-    depthMap,
   )
   createRenderer(flowFile)
   return flowFile
@@ -327,7 +326,7 @@ function CreateFlow({ modelsCached }: { modelsCached: boolean | undefined }) {
     const [message, value] = progress || ["Creating flow", undefined]
     return <>
       <div className="text-sm opacity-70">
-        Creating a new flow requires heavy computation, and may cause page to temporarily freeze.
+        Creating a new flow runs heavy computation in a background worker.
       </div>
       <div className="alert alert-soft alert-primary">
         {message}

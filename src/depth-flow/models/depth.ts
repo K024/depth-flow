@@ -8,7 +8,7 @@ export async function getDepthModelSession(blob: Blob) {
     await blob.arrayBuffer(),
     {
       executionProviders: [
-        "webgpu",
+        // "webgpu", // ort-wasm-simd-threaded.jsep.wasm > 25MB hard limit & LaMa won't run on webgpu, use wasm for all models
         "wasm",
       ],
     }

@@ -1,5 +1,5 @@
 import type { FlowSlide } from "../types"
-import { getImageData, loadImageFromBlob } from "../image/utils"
+import { getImageDataFromBlob } from "../image/utils"
 import { calculateZoomScale, createBlurMipmap, createPlaneShaderProgram } from "./common"
 import { createDepthBoundsHierarchy, createDepthBoundsTexture } from "./depth-bounds-hierarchy"
 import {
@@ -53,18 +53,16 @@ export async function createFlowSlideRenderer(
   } = createPlaneShaderProgram(canvas, fragSrc)
 
   const { width, height } = flow
-  const topImage = await loadImageFromBlob(flow.originalImage)
-  const bottomImage = await loadImageFromBlob(flow.bottomImage)
-  const layerMap = await loadImageFromBlob(flow.layerMap)
-  const layerMapData = getImageData(layerMap)
-  const topBlurMipmap = await createBlurMipmap(getImageData(topImage))
-  const bottomBlurMipmap = await createBlurMipmap(getImageData(bottomImage))
-  const depthBoundsHierarchy = createDepthBoundsHierarchy(layerMapData, [0, 2])
+  const topImage = await getImageDataFromBlob(flow.originalImage)
+  const bottomImage = await getImageDataFromBlob(flow.bottomImage)
+  const layerMap = await getImageDataFromBlob(flow.layerMap)
+  const topBlurMipmap = await createBlurMipmap(topImage)
+  const bottomBlurMipmap = await createBlurMipmap(bottomImage)
+  const depthBoundsHierarchy = createDepthBoundsHierarchy(layerMap, [0, 2])
 
   const topImageTexture = createTexture(topImage)
   const bottomImageTexture = createTexture(bottomImage)
-  // Upload decoded pixel data so packed numeric channels avoid image color conversion.
-  const layerMapTexture = createTexture(layerMapData)
+  const layerMapTexture = createTexture(layerMap)
   const topBlurMipmapTexture = createTexture(topBlurMipmap)
   const bottomBlurMipmapTexture = createTexture(bottomBlurMipmap)
   const depthBoundsTexture = createDepthBoundsTexture(gl, depthBoundsHierarchy)
