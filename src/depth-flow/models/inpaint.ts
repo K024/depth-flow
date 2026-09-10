@@ -39,6 +39,63 @@ export interface PreparedInpaintInput {
   contentY: number
   contentWidth: number
   contentHeight: number
+  cropX: number
+  cropY: number
+  cropWidth: number
+  cropHeight: number
+}
+
+function getMaskBounds(mask: ImageData) {
+  let minX = mask.width
+  let minY = mask.height
+  let maxX = -1
+  let maxY = -1
+  let area = 0
+  let perimeter = 0
+
+  const active = (x: number, y: number) => (
+    x >= 0 && x < mask.width
+    && y >= 0 && y < mask.height
+    && mask.data[(y * mask.width + x) * 4] >= 128
+  )
+
+  for (let y = 0; y < mask.height; y++) {
+    for (let x = 0; x < mask.width; x++) {
+      if (!active(x, y))
+        continue
+      area++
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x)
+      maxY = Math.max(maxY, y)
+      if (!active(x - 1, y)) perimeter++
+      if (!active(x + 1, y)) perimeter++
+      if (!active(x, y - 1)) perimeter++
+      if (!active(x, y + 1)) perimeter++
+    }
+  }
+
+  if (maxX < minX || maxY < minY)
+    return undefined
+
+  const estimatedBandWidth = perimeter > 0 ? 2 * area / perimeter : 0
+  const margin = Math.max(64, Math.ceil(3 * estimatedBandWidth))
+  return {
+    x: Math.max(0, minX - margin),
+    y: Math.max(0, minY - margin),
+    right: Math.min(mask.width, maxX + 1 + margin),
+    bottom: Math.min(mask.height, maxY + 1 + margin),
+  }
+}
+
+function cropImageData(image: ImageData, x: number, y: number, width: number, height: number) {
+  const output = new ImageData(width, height)
+  for (let outputY = 0; outputY < height; outputY++) {
+    const sourceStart = ((y + outputY) * image.width + x) * 4
+    const sourceEnd = sourceStart + width * 4
+    output.data.set(image.data.subarray(sourceStart, sourceEnd), outputY * width * 4)
+  }
+  return output
 }
 
 function padImageWithEdgePixels(
@@ -73,13 +130,23 @@ export async function prepareImageAndMaskForInpaint(
   if (image.width !== mask.width || image.height !== mask.height)
     throw new Error("Inpaint image and mask must have the same size")
 
-  const scale = Math.min(staticInputSize / image.width, staticInputSize / image.height)
-  const contentWidth = Math.max(1, Math.round(image.width * scale))
-  const contentHeight = Math.max(1, Math.round(image.height * scale))
+  const bounds = getMaskBounds(mask)
+  if (!bounds)
+    throw new Error("Cannot prepare an empty inpaint mask")
+  const cropX = bounds.x
+  const cropY = bounds.y
+  const cropWidth = bounds.right - bounds.x
+  const cropHeight = bounds.bottom - bounds.y
+  const croppedImage = cropImageData(image, cropX, cropY, cropWidth, cropHeight)
+  const croppedMask = cropImageData(mask, cropX, cropY, cropWidth, cropHeight)
+
+  const scale = Math.min(staticInputSize / cropWidth, staticInputSize / cropHeight)
+  const contentWidth = Math.max(1, Math.round(cropWidth * scale))
+  const contentHeight = Math.max(1, Math.round(cropHeight * scale))
   const contentX = Math.floor((staticInputSize - contentWidth) / 2)
   const contentY = Math.floor((staticInputSize - contentHeight) / 2)
-  const scaledImage = await scaleImageData(image, contentWidth, contentHeight)
-  const scaledMask = await scaleImageData(mask, contentWidth, contentHeight)
+  const scaledImage = await scaleImageData(croppedImage, contentWidth, contentHeight)
+  const scaledMask = await scaleImageData(croppedMask, contentWidth, contentHeight)
   binarizeMask(scaledMask)
 
   const paddedImage = padImageWithEdgePixels(
@@ -99,6 +166,10 @@ export async function prepareImageAndMaskForInpaint(
     contentY,
     contentWidth,
     contentHeight,
+    cropX,
+    cropY,
+    cropWidth,
+    cropHeight,
   }
 }
 
@@ -121,11 +192,19 @@ export async function restoreInpaintOutput(
     prepared.contentWidth,
     prepared.contentHeight,
   )
-  return scaleImageData(
+  const restoredCrop = await scaleImageData(
     ctx.getImageData(0, 0, prepared.contentWidth, prepared.contentHeight),
-    width,
-    height,
+    prepared.cropWidth,
+    prepared.cropHeight,
   )
+  const fullOutput = new ImageData(width, height)
+  for (let y = 0; y < prepared.cropHeight; y++) {
+    const sourceStart = y * prepared.cropWidth * 4
+    const sourceEnd = sourceStart + prepared.cropWidth * 4
+    const targetStart = ((prepared.cropY + y) * width + prepared.cropX) * 4
+    fullOutput.data.set(restoredCrop.data.subarray(sourceStart, sourceEnd), targetStart)
+  }
+  return fullOutput
 }
 
 export async function scaleImageAndMaskDataForInpaint(image: ImageData, mask: ImageData) {

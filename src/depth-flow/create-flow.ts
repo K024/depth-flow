@@ -2,7 +2,9 @@ import { getCachedFile } from "./file-cache"
 import { saveFlowZip } from "./flow-file"
 import { consoleLogImageData } from "./image/console"
 import {
+  circularDilateImageData,
   dilateImageData,
+  gaussianBlurImageData,
   getImageData,
   loadImageFromBlob,
   saveImageData,
@@ -86,6 +88,7 @@ async function simpleProcess(image: Blob, args: Required<SimpleFlowArgs>, progre
 
   return {
     imageData,
+    depthMap,
     scaledBackDepthMap,
     dilatedDepthMap,
   }
@@ -123,7 +126,7 @@ export async function createSimpleFlow(image: Blob, args?: SimpleFlowArgs, progr
 }
 
 export interface SlideFlowArgs extends SoftLayeringArgs, RepairMaskArgs, BottomDepthRepairArgs {
-  depthMapDilateRadius: number
+  poolRadius: number
 }
 
 export async function createSlideFlow(
@@ -132,29 +135,38 @@ export async function createSlideFlow(
   progress?: ProgressReporter,
 ) {
   const normalizedArgs: SlideFlowArgs = {
-    analysisResolution: clip(args.analysisResolution, 64, 1024),
-    visibilityBeta: clip(args.visibilityBeta, 0, 1000, false),
-    disocclusionRho: clip(args.disocclusionRho, 0, 20, false),
-    disocclusionGamma: clip(args.disocclusionGamma, 0, 100, false),
-    disocclusionRadius: clip(args.disocclusionRadius, 1, 256),
+    poolRadius: clip(args.poolRadius, 0, 8),
+    blurSigma: clip(args.blurSigma, 0, 6, false),
+    betaStep: clip(args.betaStep, 5, 300, false),
+    disocclusionRho: clip(args.disocclusionRho, 3, 24, false),
+    disocclusionGamma: clip(args.disocclusionGamma, 5, 100, false),
     repairThreshold: clip(args.repairThreshold, 0, 1, false),
-    repairDilateRadius: clip(args.repairDilateRadius, 0, 64),
+    repairDilateRadius: clip(args.repairDilateRadius, 0, 16),
     bottomDepthEpsilon: clip(args.bottomDepthEpsilon, 0, 0.25, false),
-    depthMapDilateRadius: clip(args.depthMapDilateRadius, 0, 20),
   }
 
-  const { imageData, scaledBackDepthMap, dilatedDepthMap } = await simpleProcess(
+  const { imageData, depthMap, scaledBackDepthMap } = await simpleProcess(
     image,
-    { depthMapDilateRadius: normalizedArgs.depthMapDilateRadius },
+    { depthMapDilateRadius: 0 },
     progress,
   )
 
   progress?.("Computing SLIDE soft layering")
   await frame()
 
-  // Visibility must follow rendered Top geometry; computing it before dilation
-  // leaves opaque pixels on the expanded side of depth discontinuities.
-  const diagnostics = await createSoftLayeringDiagnostics(dilatedDepthMap, normalizedArgs)
+  // Keep all layering analysis on the depth model's native grid. D_pool is
+  // used for disocclusion; its blurred form D_top drives both rendered Top
+  // geometry and visibility so their transition bands stay aligned.
+  const pooledDepthMap = circularDilateImageData(depthMap, normalizedArgs.poolRadius)
+  const nativeTopDepthMap = await gaussianBlurImageData(
+    pooledDepthMap,
+    normalizedArgs.blurSigma,
+  )
+  const diagnostics = await createSoftLayeringDiagnostics(
+    nativeTopDepthMap,
+    pooledDepthMap,
+    normalizedArgs,
+  )
   const repairMasks = await createRepairMasks(
     diagnostics.softDisocclusion,
     imageData.width,
@@ -170,6 +182,7 @@ export async function createSlideFlow(
     ["repairMask", repairMasks.repairMask],
     ["dilatedRepairMask", repairMasks.dilatedRepairMask],
     ["fullResolutionRepairMask", repairMasks.fullResolutionRepairMask],
+    ["fullResolutionBlendMask", repairMasks.fullResolutionBlendMask],
   ] as const
 
   console.group("SLIDE soft-layering diagnostics")
@@ -195,6 +208,12 @@ export async function createSlideFlow(
       imageData,
       repairMasks.fullResolutionRepairMask,
     )
+    console.log("LaMa crop", {
+      x: prepared.cropX,
+      y: prepared.cropY,
+      width: prepared.cropWidth,
+      height: prepared.cropHeight,
+    })
     const imageTensor = tensorFromImageData(prepared.image, false)
     const maskTensor = tensorFromImageDataChannel(prepared.mask, "r", false)
     const outputTensor = await inferInpaintSession(inpaintSession, imageTensor, maskTensor)
@@ -208,7 +227,7 @@ export async function createSlideFlow(
     bottomImage = compositeInpaintedImage(
       imageData,
       restoredOutput,
-      repairMasks.fullResolutionRepairMask,
+      repairMasks.fullResolutionBlendMask,
     )
 
     console.log(`bottomImage (${bottomImage.width}x${bottomImage.height})`)
@@ -220,17 +239,23 @@ export async function createSlideFlow(
   progress?.("Building SLIDE depth layers")
   await frame()
 
-  const topDepthMap = dilatedDepthMap
+  const topDepthMap = await scaleImageData(
+    nativeTopDepthMap,
+    imageData.width,
+    imageData.height,
+  )
   const topVisibility = await scaleImageData(
     diagnostics.topVisibility,
     imageData.width,
     imageData.height,
   )
-  const bottomDepthMap = repairBottomDepth(
+  const bottomDepthRepair = repairBottomDepth(
     scaledBackDepthMap,
+    topDepthMap,
     repairMasks.fullResolutionRepairMask,
     normalizedArgs,
   )
+  const bottomDepthMap = bottomDepthRepair.image
 
   console.log(`topDepthMap (${topDepthMap.width}x${topDepthMap.height})`)
   await consoleLogImageData(topDepthMap)
@@ -238,6 +263,7 @@ export async function createSlideFlow(
   await consoleLogImageData(topVisibility)
   console.log(`bottomDepthMap (${bottomDepthMap.width}x${bottomDepthMap.height})`)
   await consoleLogImageData(bottomDepthMap)
+  console.log("bottom depth repair", bottomDepthRepair.stats)
   const layerMap = packSlideLayerMap(topDepthMap, topVisibility, bottomDepthMap)
   console.log("layerMap RGB = topDepth / topVisibility / bottomDepth")
   await consoleLogImageData(layerMap)
@@ -255,7 +281,7 @@ export async function createSlideFlow(
     layerMap: await saveImageData(layerMap, "image/png"),
     width: imageData.width,
     height: imageData.height,
-    processedBy: "depth-flow-web/slide/v1",
+    processedBy: "depth-flow-web/slide/v2",
     processArgs: normalizedArgs,
   }
 

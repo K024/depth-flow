@@ -15,13 +15,13 @@ export const depthMapDilateRadius = signal(4)
 
 // slide flow
 
-export const slideAnalysisResolution = signal(512)
-export const slideVisibilityBeta = signal(300)
-export const slideDisocclusionRho = signal(1)
-export const slideDisocclusionGamma = signal(10)
-export const slideDisocclusionRadius = signal(64)
+export const slidePoolRadius = signal(2)
+export const slideBlurSigma = signal(2)
+export const slideBetaStep = signal(50)
+export const slideDisocclusionRho = signal(7)
+export const slideDisocclusionGamma = signal(30)
 export const slideRepairThreshold = signal(0.5)
-export const slideRepairDilateRadius = signal(4)
+export const slideRepairDilateRadius = signal(2)
 export const slideBottomDepthEpsilon = signal(0.01)
 
 
@@ -65,40 +65,34 @@ function SlideFlowSettings() {
     <div className="divider opacity-60 mb-0">SLIDE Flow</div>
 
     <RangeFieldset
-      label="Depth Map Dilate Radius"
-      signal={depthMapDilateRadius}
-      min={0} max={20} step={1}
-      description="Moves the Top depth edge outward before visibility and disocclusion analysis."
+      label="Depth Pool Radius"
+      signal={slidePoolRadius}
+      min={0} max={8} step={1}
+      description="Circular max-pool radius in native depth-model pixels."
     />
     <RangeFieldset
-      label="Analysis Resolution"
-      signal={slideAnalysisResolution}
-      min={64} max={512} step={32}
-      description="Long-side resolution used for soft-layering diagnostics."
+      label="Depth Blur Sigma"
+      signal={slideBlurSigma}
+      min={0} max={6} step={0.25}
+      description="Gaussian sigma in native depth pixels; directly controls transparency-band width."
     />
     <RangeFieldset
-      label="Visibility Beta"
-      signal={slideVisibilityBeta}
-      min={0} max={500} step={5}
-      description="Controls transparency near disparity discontinuities."
+      label="Visibility Step Beta"
+      signal={slideBetaStep}
+      min={5} max={300} step={5}
+      description="Controls which normalized disparity step heights become transparent."
     />
     <RangeFieldset
       label="Disocclusion Rho"
       signal={slideDisocclusionRho}
-      min={0} max={5} step={0.05}
-      description="Penalizes distant scan-line candidates in normalized image coordinates."
+      min={3} max={24} step={0.25}
+      description="Controls disocclusion width; larger values produce narrower repair bands."
     />
     <RangeFieldset
       label="Disocclusion Gamma"
       signal={slideDisocclusionGamma}
-      min={0} max={50} step={0.5}
+      min={5} max={100} step={1}
       description="Controls soft disocclusion response steepness."
-    />
-    <RangeFieldset
-      label="Disocclusion Radius"
-      signal={slideDisocclusionRadius}
-      min={1} max={128} step={1}
-      description="Horizontal and vertical scan radius at analysis resolution."
     />
     <RangeFieldset
       label="Repair Threshold"
@@ -109,8 +103,8 @@ function SlideFlowSettings() {
     <RangeFieldset
       label="Repair Dilate Radius"
       signal={slideRepairDilateRadius}
-      min={0} max={32} step={1}
-      description="Safety dilation in analysis-resolution pixels."
+      min={0} max={16} step={1}
+      description="Circular safety dilation in native depth-model pixels."
     />
     <RangeFieldset
       label="Bottom Depth Epsilon"

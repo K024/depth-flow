@@ -166,16 +166,112 @@ export async function dilateImageData(imageData: ImageData, radius: number, filt
 }
 
 
-export async function gaussianBlurImageData(imageData: ImageData, radius: number) {
-  const { ctx } = getCanvas(imageData.width, imageData.height)
+export function circularDilateImageData(imageData: ImageData, radius: number) {
+  radius = Math.round(radius)
+  if (radius <= 0)
+    return cloneImageData(imageData)
 
-  const imageBitmap = await createImageBitmap(imageData)
+  const { data, width, height } = imageData
+  const output = new ImageData(width, height)
+  const outputData = output.data
+  const rowValues = new Uint8ClampedArray(width)
+  const filteredRow = new Uint8ClampedArray(width)
+  const deque = new Int32Array(width)
 
-  ctx.filter = `blur(${radius}px)`
-  ctx.drawImage(imageBitmap, 0, 0)
-  const blurredImageData = ctx.getImageData(0, 0, imageData.width, imageData.height)
+  // A disk is the union of horizontal intervals. For each vertical offset,
+  // compute an exact sliding-window maximum and merge it into the output.
+  for (let dy = -radius; dy <= radius; dy++) {
+    const horizontalRadius = Math.floor(Math.sqrt(radius * radius - dy * dy))
+    for (let y = 0; y < height; y++) {
+      const sourceY = y + dy
+      if (sourceY < 0 || sourceY >= height)
+        continue
 
-  return blurredImageData
+      for (let channel = 0; channel < 4; channel++) {
+        for (let x = 0; x < width; x++)
+          rowValues[x] = data[(sourceY * width + x) * 4 + channel]
+
+        let dequeStart = 0
+        let dequeEnd = 0
+        let nextX = 0
+        for (let x = 0; x < width; x++) {
+          const windowEnd = Math.min(width - 1, x + horizontalRadius)
+          while (nextX <= windowEnd) {
+            while (
+              dequeEnd > dequeStart
+              && rowValues[deque[dequeEnd - 1]] <= rowValues[nextX]
+            ) {
+              dequeEnd--
+            }
+            deque[dequeEnd++] = nextX++
+          }
+
+          const windowStart = x - horizontalRadius
+          while (dequeEnd > dequeStart && deque[dequeStart] < windowStart)
+            dequeStart++
+
+          filteredRow[x] = rowValues[deque[dequeStart]]
+        }
+
+        for (let x = 0; x < width; x++) {
+          const outputIndex = (y * width + x) * 4 + channel
+          outputData[outputIndex] = Math.max(outputData[outputIndex], filteredRow[x])
+        }
+      }
+    }
+  }
+
+  return output
+}
+
+
+export async function gaussianBlurImageData(imageData: ImageData, sigma: number) {
+  sigma = Math.max(0, sigma)
+  if (sigma <= 0)
+    return cloneImageData(imageData)
+
+  const { data, width, height } = imageData
+  const radius = Math.max(1, Math.ceil(sigma * 3))
+  const kernel = new Float32Array(radius * 2 + 1)
+  let kernelSum = 0
+  for (let offset = -radius; offset <= radius; offset++) {
+    const weight = Math.exp(-(offset * offset) / (2 * sigma * sigma))
+    kernel[offset + radius] = weight
+    kernelSum += weight
+  }
+  for (let i = 0; i < kernel.length; i++)
+    kernel[i] /= kernelSum
+
+  const temp = new Float32Array(data.length)
+  const output = new ImageData(width, height)
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      for (let channel = 0; channel < 4; channel++) {
+        let value = 0
+        for (let offset = -radius; offset <= radius; offset++) {
+          const sourceX = Math.max(0, Math.min(width - 1, x + offset))
+          value += data[(y * width + sourceX) * 4 + channel] * kernel[offset + radius]
+        }
+        temp[(y * width + x) * 4 + channel] = value
+      }
+    }
+  }
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      for (let channel = 0; channel < 4; channel++) {
+        let value = 0
+        for (let offset = -radius; offset <= radius; offset++) {
+          const sourceY = Math.max(0, Math.min(height - 1, y + offset))
+          value += temp[(sourceY * width + x) * 4 + channel] * kernel[offset + radius]
+        }
+        output.data[(y * width + x) * 4 + channel] = Math.round(value)
+      }
+    }
+  }
+
+  return output
 }
 
 

@@ -1,4 +1,9 @@
-import { cloneImageData, dilateImageData, scaleImageDataNearest } from "../image/utils"
+import {
+  circularDilateImageData,
+  cloneImageData,
+  gaussianBlurImageData,
+  scaleImageData,
+} from "../image/utils"
 
 
 export interface RepairMaskArgs {
@@ -10,6 +15,7 @@ export interface RepairMasks {
   repairMask: ImageData
   dilatedRepairMask: ImageData
   fullResolutionRepairMask: ImageData
+  fullResolutionBlendMask: ImageData
   repairRatio: number
   dilatedRepairRatio: number
 }
@@ -50,46 +56,71 @@ export async function createRepairMasks(
   outputHeight: number,
   args: RepairMaskArgs,
 ): Promise<RepairMasks> {
-  const thresholded = thresholdImage(softDisocclusion, args.repairThreshold)
+  const nativeThresholded = thresholdImage(softDisocclusion, args.repairThreshold)
   const dilatedRepairMask = args.repairDilateRadius > 0
-    ? await dilateImageData(thresholded.image, args.repairDilateRadius)
-    : cloneImageData(thresholded.image)
-  const fullResolutionRepairMask = await scaleImageDataNearest(
-    dilatedRepairMask,
+    ? circularDilateImageData(nativeThresholded.image, args.repairDilateRadius)
+    : cloneImageData(nativeThresholded.image)
+
+  // Upsample the soft map first. Thresholding a nearest-neighbor binary mask
+  // would preserve the native-grid staircase at the final image resolution.
+  const fullResolutionSoftMask = await scaleImageData(
+    softDisocclusion,
     outputWidth,
     outputHeight,
   )
+  const fullThresholded = thresholdImage(fullResolutionSoftMask, args.repairThreshold)
+  const nativeToOutputScale = Math.max(
+    outputWidth / softDisocclusion.width,
+    outputHeight / softDisocclusion.height,
+  )
+  const outputDilateRadius = Math.round(args.repairDilateRadius * nativeToOutputScale)
+  const fullResolutionRepairMask = outputDilateRadius > 0
+    ? circularDilateImageData(fullThresholded.image, outputDilateRadius)
+    : fullThresholded.image
+  const fullResolutionBlendMask = await gaussianBlurImageData(fullResolutionRepairMask, 2.5)
+  // Feather inward only. Outside the repair mask Bottom must remain exactly
+  // identical to Top/source, so harmless transparency cannot reveal altered RGB.
+  for (let i = 0; i < fullResolutionBlendMask.data.length; i += 4) {
+    if (fullResolutionRepairMask.data[i] >= 128)
+      continue
+    fullResolutionBlendMask.data[i] = 0
+    fullResolutionBlendMask.data[i + 1] = 0
+    fullResolutionBlendMask.data[i + 2] = 0
+  }
 
   return {
-    repairMask: thresholded.image,
+    repairMask: nativeThresholded.image,
     dilatedRepairMask,
     fullResolutionRepairMask,
-    repairRatio: thresholded.ratio,
-    dilatedRepairRatio: maskRatio(dilatedRepairMask),
+    fullResolutionBlendMask,
+    repairRatio: fullThresholded.ratio,
+    dilatedRepairRatio: maskRatio(fullResolutionRepairMask),
   }
 }
 
 export function compositeInpaintedImage(
   source: ImageData,
   inpainted: ImageData,
-  mask: ImageData,
+  blendMask: ImageData,
 ) {
   if (
     source.width !== inpainted.width
     || source.height !== inpainted.height
-    || source.width !== mask.width
-    || source.height !== mask.height
+    || source.width !== blendMask.width
+    || source.height !== blendMask.height
   ) {
     throw new Error("Source, inpainted image, and mask must have the same size")
   }
 
   const output = cloneImageData(source)
   for (let i = 0; i < output.data.length; i += 4) {
-    if (mask.data[i] < 128)
+    const alpha = blendMask.data[i] / 255
+    if (alpha <= 0)
       continue
-    output.data[i] = inpainted.data[i]
-    output.data[i + 1] = inpainted.data[i + 1]
-    output.data[i + 2] = inpainted.data[i + 2]
+    const inverseAlpha = 1 - alpha
+    output.data[i] = source.data[i] * inverseAlpha + inpainted.data[i] * alpha
+    output.data[i + 1] = source.data[i + 1] * inverseAlpha + inpainted.data[i + 1] * alpha
+    output.data[i + 2] = source.data[i + 2] * inverseAlpha + inpainted.data[i + 2] * alpha
   }
   return output
 }

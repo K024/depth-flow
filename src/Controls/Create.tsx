@@ -7,14 +7,14 @@ import { setBackground } from "../Canvas/Background"
 import { setRenderer } from "../Canvas/Renderer"
 import {
   depthMapDilateRadius,
-  slideAnalysisResolution,
+  slideBetaStep,
+  slideBlurSigma,
   slideBottomDepthEpsilon,
   slideDisocclusionGamma,
-  slideDisocclusionRadius,
   slideDisocclusionRho,
+  slidePoolRadius,
   slideRepairDilateRadius,
   slideRepairThreshold,
-  slideVisibilityBeta,
 } from "./Settings"
 import { humanSize, asyncState } from "./utils"
 import { checkAllModelsCached, downloadAllModels } from "../depth-flow/models/cache"
@@ -81,14 +81,13 @@ const {
   const flowFile = await createSlideFlow(
     file,
     {
-      analysisResolution: slideAnalysisResolution.value,
-      visibilityBeta: slideVisibilityBeta.value,
+      poolRadius: slidePoolRadius.value,
+      blurSigma: slideBlurSigma.value,
+      betaStep: slideBetaStep.value,
       disocclusionRho: slideDisocclusionRho.value,
       disocclusionGamma: slideDisocclusionGamma.value,
-      disocclusionRadius: slideDisocclusionRadius.value,
       repairThreshold: slideRepairThreshold.value,
       repairDilateRadius: slideRepairDilateRadius.value,
-      depthMapDilateRadius: depthMapDilateRadius.value,
       bottomDepthEpsilon: slideBottomDepthEpsilon.value,
     },
     (message, p) => createProgress.value = [message, p],
