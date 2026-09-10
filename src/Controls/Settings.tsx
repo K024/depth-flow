@@ -49,7 +49,7 @@ function RangeFieldset({
             signal.value = Number(e.target.value)
           }}
         />
-        <div className="text-sm w-6">
+        <div className="text-sm w-12 text-right tabular-nums">
           {value}
         </div>
       </div>

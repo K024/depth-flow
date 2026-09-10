@@ -12,8 +12,6 @@ export interface RepairMaskArgs {
 }
 
 export interface RepairMasks {
-  repairMask: ImageData
-  dilatedRepairMask: ImageData
   fullResolutionRepairMask: ImageData
   fullResolutionBlendMask: ImageData
   repairRatio: number
@@ -56,11 +54,6 @@ export async function createRepairMasks(
   outputHeight: number,
   args: RepairMaskArgs,
 ): Promise<RepairMasks> {
-  const nativeThresholded = thresholdImage(softDisocclusion, args.repairThreshold)
-  const dilatedRepairMask = args.repairDilateRadius > 0
-    ? circularDilateImageData(nativeThresholded.image, args.repairDilateRadius)
-    : cloneImageData(nativeThresholded.image)
-
   // Upsample the soft map first. Thresholding a nearest-neighbor binary mask
   // would preserve the native-grid staircase at the final image resolution.
   const fullResolutionSoftMask = await scaleImageData(
@@ -77,7 +70,7 @@ export async function createRepairMasks(
   const fullResolutionRepairMask = outputDilateRadius > 0
     ? circularDilateImageData(fullThresholded.image, outputDilateRadius)
     : fullThresholded.image
-  const fullResolutionBlendMask = await gaussianBlurImageData(fullResolutionRepairMask, 2.5)
+  const fullResolutionBlendMask = gaussianBlurImageData(fullResolutionRepairMask, 2.5, true)
   // Feather inward only. Outside the repair mask Bottom must remain exactly
   // identical to Top/source, so harmless transparency cannot reveal altered RGB.
   for (let i = 0; i < fullResolutionBlendMask.data.length; i += 4) {
@@ -89,8 +82,6 @@ export async function createRepairMasks(
   }
 
   return {
-    repairMask: nativeThresholded.image,
-    dilatedRepairMask,
     fullResolutionRepairMask,
     fullResolutionBlendMask,
     repairRatio: fullThresholded.ratio,
@@ -121,6 +112,28 @@ export function compositeInpaintedImage(
     output.data[i] = source.data[i] * inverseAlpha + inpainted.data[i] * alpha
     output.data[i + 1] = source.data[i + 1] * inverseAlpha + inpainted.data[i + 1] * alpha
     output.data[i + 2] = source.data[i + 2] * inverseAlpha + inpainted.data[i + 2] * alpha
+  }
+  return output
+}
+
+export function alignVisibilityToRepairMask(
+  visibility: ImageData,
+  blendMask: ImageData,
+) {
+  if (
+    visibility.width !== blendMask.width
+    || visibility.height !== blendMask.height
+  ) {
+    throw new Error("Visibility and blend mask must have the same size")
+  }
+
+  const output = cloneImageData(visibility)
+  for (let i = 0; i < output.data.length; i += 4) {
+    const blend = blendMask.data[i] / 255
+    const value = 255 - (255 - visibility.data[i]) * blend
+    output.data[i] = value
+    output.data[i + 1] = value
+    output.data[i + 2] = value
   }
   return output
 }

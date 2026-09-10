@@ -187,36 +187,38 @@ export function circularDilateImageData(imageData: ImageData, radius: number) {
       if (sourceY < 0 || sourceY >= height)
         continue
 
-      for (let channel = 0; channel < 4; channel++) {
-        for (let x = 0; x < width; x++)
-          rowValues[x] = data[(sourceY * width + x) * 4 + channel]
+      for (let x = 0; x < width; x++)
+        rowValues[x] = data[(sourceY * width + x) * 4]
 
-        let dequeStart = 0
-        let dequeEnd = 0
-        let nextX = 0
-        for (let x = 0; x < width; x++) {
-          const windowEnd = Math.min(width - 1, x + horizontalRadius)
-          while (nextX <= windowEnd) {
-            while (
-              dequeEnd > dequeStart
-              && rowValues[deque[dequeEnd - 1]] <= rowValues[nextX]
-            ) {
-              dequeEnd--
-            }
-            deque[dequeEnd++] = nextX++
+      let dequeStart = 0
+      let dequeEnd = 0
+      let nextX = 0
+      for (let x = 0; x < width; x++) {
+        const windowEnd = Math.min(width - 1, x + horizontalRadius)
+        while (nextX <= windowEnd) {
+          while (
+            dequeEnd > dequeStart
+            && rowValues[deque[dequeEnd - 1]] <= rowValues[nextX]
+          ) {
+            dequeEnd--
           }
-
-          const windowStart = x - horizontalRadius
-          while (dequeEnd > dequeStart && deque[dequeStart] < windowStart)
-            dequeStart++
-
-          filteredRow[x] = rowValues[deque[dequeStart]]
+          deque[dequeEnd++] = nextX++
         }
 
-        for (let x = 0; x < width; x++) {
-          const outputIndex = (y * width + x) * 4 + channel
-          outputData[outputIndex] = Math.max(outputData[outputIndex], filteredRow[x])
-        }
+        const windowStart = x - horizontalRadius
+        while (dequeEnd > dequeStart && deque[dequeStart] < windowStart)
+          dequeStart++
+
+        filteredRow[x] = rowValues[deque[dequeStart]]
+      }
+
+      for (let x = 0; x < width; x++) {
+        const outputIndex = (y * width + x) * 4
+        const value = Math.max(outputData[outputIndex], filteredRow[x])
+        outputData[outputIndex] = value
+        outputData[outputIndex + 1] = value
+        outputData[outputIndex + 2] = value
+        outputData[outputIndex + 3] = 255
       }
     }
   }
@@ -225,7 +227,11 @@ export function circularDilateImageData(imageData: ImageData, radius: number) {
 }
 
 
-export async function gaussianBlurImageData(imageData: ImageData, sigma: number) {
+export function gaussianBlurImageData(
+  imageData: ImageData,
+  sigma: number,
+  grayscale = false,
+) {
   sigma = Math.max(0, sigma)
   if (sigma <= 0)
     return cloneImageData(imageData)
@@ -247,7 +253,8 @@ export async function gaussianBlurImageData(imageData: ImageData, sigma: number)
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      for (let channel = 0; channel < 4; channel++) {
+      const channelCount = grayscale ? 1 : 4
+      for (let channel = 0; channel < channelCount; channel++) {
         let value = 0
         for (let offset = -radius; offset <= radius; offset++) {
           const sourceX = Math.max(0, Math.min(width - 1, x + offset))
@@ -260,13 +267,20 @@ export async function gaussianBlurImageData(imageData: ImageData, sigma: number)
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      for (let channel = 0; channel < 4; channel++) {
+      const channelCount = grayscale ? 1 : 4
+      for (let channel = 0; channel < channelCount; channel++) {
         let value = 0
         for (let offset = -radius; offset <= radius; offset++) {
           const sourceY = Math.max(0, Math.min(height - 1, y + offset))
           value += temp[(sourceY * width + x) * 4 + channel] * kernel[offset + radius]
         }
         output.data[(y * width + x) * 4 + channel] = Math.round(value)
+      }
+      if (grayscale) {
+        const outputIndex = (y * width + x) * 4
+        output.data[outputIndex + 1] = output.data[outputIndex]
+        output.data[outputIndex + 2] = output.data[outputIndex]
+        output.data[outputIndex + 3] = 255
       }
     }
   }

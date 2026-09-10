@@ -17,6 +17,8 @@ export interface SoftLayeringDiagnostics {
   topVisibility: ImageData
   maxDisocclusionScore: ImageData
   softDisocclusion: ImageData
+  farReference: Float32Array
+  farReferenceImage: ImageData
   stats: {
     gradientMagnitude: ImageValueStats
     topVisibility: ImageValueStats
@@ -118,12 +120,9 @@ function calculateTopVisibility(
   betaStep: number,
 ) {
   const visibility = new Float32Array(gradientMagnitude.length)
-  // A Gaussian-blurred unit step has peak gradient
-  // 1 / (sigma * sqrt(2 PI)); multiplying by this width recovers step height.
-  // At sigma=0, Sobel's central difference needs a factor of two for a hard step.
-  const effectiveWidth = blurSigma > 0
-    ? blurSigma * Math.sqrt(2 * Math.PI)
-    : 2
+  // Include Sobel's own smoothing variance so the step-height estimate stays
+  // calibrated when the explicit Gaussian sigma is small.
+  const effectiveWidth = Math.sqrt(2 * Math.PI * (blurSigma * blurSigma + 0.45))
   for (let i = 0; i < visibility.length; i++) {
     const stepHeight = gradientMagnitude[i] * effectiveWidth
     visibility[i] = Math.exp(-betaStep * stepHeight * stepHeight)
@@ -140,21 +139,39 @@ function calculateSoftDisocclusion(
 ) {
   const score = new Float32Array(disparity.length)
   const softDisocclusion = new Float32Array(disparity.length)
+  const farReference = new Float32Array(disparity)
 
   const envelope = new Float32Array(Math.max(width, height))
+  const argmin = new Int32Array(Math.max(width, height))
 
   const accumulateLine = (start: number, length: number, stride: number, step: number) => {
     envelope[0] = disparity[start]
+    argmin[0] = 0
     for (let i = 1; i < length; i++) {
       const index = start + i * stride
-      envelope[i] = Math.min(disparity[index], envelope[i - 1] + rho * step)
+      const propagated = envelope[i - 1] + rho * step
+      if (disparity[index] <= propagated) {
+        envelope[i] = disparity[index]
+        argmin[i] = i
+      } else {
+        envelope[i] = propagated
+        argmin[i] = argmin[i - 1]
+      }
     }
     for (let i = length - 2; i >= 0; i--) {
-      envelope[i] = Math.min(envelope[i], envelope[i + 1] + rho * step)
+      const propagated = envelope[i + 1] + rho * step
+      if (propagated < envelope[i]) {
+        envelope[i] = propagated
+        argmin[i] = argmin[i + 1]
+      }
     }
     for (let i = 0; i < length; i++) {
       const index = start + i * stride
-      score[index] = Math.max(score[index], disparity[index] - envelope[i])
+      const axisScore = disparity[index] - envelope[i]
+      if (axisScore > score[index]) {
+        score[index] = axisScore
+        farReference[index] = disparity[start + argmin[i] * stride]
+      }
     }
   }
 
@@ -168,7 +185,7 @@ function calculateSoftDisocclusion(
   for (let i = 0; i < score.length; i++)
     softDisocclusion[i] = Math.tanh(gamma * score[i])
 
-  return { score, softDisocclusion }
+  return { score, softDisocclusion, farReference }
 }
 
 export async function createSoftLayeringDiagnostics(
@@ -192,7 +209,7 @@ export async function createSoftLayeringDiagnostics(
     args.blurSigma,
     args.betaStep,
   )
-  const { score, softDisocclusion } = calculateSoftDisocclusion(
+  const { score, softDisocclusion, farReference } = calculateSoftDisocclusion(
     disocclusionValues,
     width,
     height,
@@ -207,6 +224,8 @@ export async function createSoftLayeringDiagnostics(
     topVisibility: imageDataFromValues(topVisibility, width, height),
     maxDisocclusionScore: imageDataFromValues(score, width, height),
     softDisocclusion: imageDataFromValues(softDisocclusion, width, height),
+    farReference,
+    farReferenceImage: imageDataFromValues(farReference, width, height),
     stats: {
       gradientMagnitude: calculateStats(gradientMagnitude),
       topVisibility: calculateStats(topVisibility),

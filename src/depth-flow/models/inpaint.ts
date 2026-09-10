@@ -43,49 +43,178 @@ export interface PreparedInpaintInput {
   cropY: number
   cropWidth: number
   cropHeight: number
+  estimatedModelMaskWidth: number
+  restoreMask: ImageData
 }
 
-function getMaskBounds(mask: ImageData) {
-  let minX = mask.width
-  let minY = mask.height
-  let maxX = -1
-  let maxY = -1
-  let area = 0
-  let perimeter = 0
+interface MaskComponent {
+  indices: number[]
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+  area: number
+  perimeter: number
+}
 
-  const active = (x: number, y: number) => (
-    x >= 0 && x < mask.width
-    && y >= 0 && y < mask.height
-    && mask.data[(y * mask.width + x) * 4] >= 128
-  )
+interface MaskCluster {
+  components: MaskComponent[]
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+  area: number
+  perimeter: number
+}
 
-  for (let y = 0; y < mask.height; y++) {
-    for (let x = 0; x < mask.width; x++) {
-      if (!active(x, y))
-        continue
-      area++
+function findMaskComponents(mask: ImageData) {
+  const pixelCount = mask.width * mask.height
+  const seen = new Uint8Array(pixelCount)
+  const queue = new Int32Array(pixelCount)
+  const components: MaskComponent[] = []
+
+  const active = (index: number) => mask.data[index * 4] >= 128
+
+  for (let start = 0; start < pixelCount; start++) {
+    if (seen[start] || !active(start))
+      continue
+
+    let queueStart = 0
+    let queueEnd = 0
+    queue[queueEnd++] = start
+    seen[start] = 1
+    const indices: number[] = []
+    let minX = mask.width
+    let minY = mask.height
+    let maxX = -1
+    let maxY = -1
+    let perimeter = 0
+
+    while (queueStart < queueEnd) {
+      const index = queue[queueStart++]
+      indices.push(index)
+      const x = index % mask.width
+      const y = Math.floor(index / mask.width)
       minX = Math.min(minX, x)
       minY = Math.min(minY, y)
       maxX = Math.max(maxX, x)
       maxY = Math.max(maxY, y)
-      if (!active(x - 1, y)) perimeter++
-      if (!active(x + 1, y)) perimeter++
-      if (!active(x, y - 1)) perimeter++
-      if (!active(x, y + 1)) perimeter++
+      const neighbors = [
+        x > 0 ? index - 1 : -1,
+        x + 1 < mask.width ? index + 1 : -1,
+        y > 0 ? index - mask.width : -1,
+        y + 1 < mask.height ? index + mask.width : -1,
+      ]
+      for (const neighbor of neighbors) {
+        if (neighbor < 0 || !active(neighbor)) {
+          perimeter++
+        } else if (!seen[neighbor]) {
+          seen[neighbor] = 1
+          queue[queueEnd++] = neighbor
+        }
+      }
     }
+
+    components.push({
+      indices,
+      minX,
+      minY,
+      maxX,
+      maxY,
+      area: indices.length,
+      perimeter,
+    })
+  }
+  return components
+}
+
+function clusterMaskComponents(components: MaskComponent[], maxClusters = 4) {
+  const clusters: MaskCluster[] = components.map(component => ({
+    components: [component],
+    minX: component.minX,
+    minY: component.minY,
+    maxX: component.maxX,
+    maxY: component.maxY,
+    area: component.area,
+    perimeter: component.perimeter,
+  }))
+
+  while (clusters.length > maxClusters) {
+    let bestA = 0
+    let bestB = 1
+    let bestCost = Infinity
+    for (let a = 0; a < clusters.length; a++) {
+      for (let b = a + 1; b < clusters.length; b++) {
+        const first = clusters[a]
+        const second = clusters[b]
+        const minX = Math.min(first.minX, second.minX)
+        const minY = Math.min(first.minY, second.minY)
+        const maxX = Math.max(first.maxX, second.maxX)
+        const maxY = Math.max(first.maxY, second.maxY)
+        const unionArea = (maxX - minX + 1) * (maxY - minY + 1)
+        const firstArea = (first.maxX - first.minX + 1) * (first.maxY - first.minY + 1)
+        const secondArea = (second.maxX - second.minX + 1) * (second.maxY - second.minY + 1)
+        const cost = unionArea - firstArea - secondArea
+        if (cost < bestCost) {
+          bestCost = cost
+          bestA = a
+          bestB = b
+        }
+      }
+    }
+
+    const first = clusters[bestA]
+    const second = clusters[bestB]
+    clusters[bestA] = {
+      components: [...first.components, ...second.components],
+      minX: Math.min(first.minX, second.minX),
+      minY: Math.min(first.minY, second.minY),
+      maxX: Math.max(first.maxX, second.maxX),
+      maxY: Math.max(first.maxY, second.maxY),
+      area: first.area + second.area,
+      perimeter: first.perimeter + second.perimeter,
+    }
+    clusters.splice(bestB, 1)
   }
 
-  if (maxX < minX || maxY < minY)
-    return undefined
+  return clusters
+}
 
-  const estimatedBandWidth = perimeter > 0 ? 2 * area / perimeter : 0
+function getClusterBounds(mask: ImageData, cluster: MaskCluster) {
+  const estimatedBandWidth = cluster.perimeter > 0
+    ? 2 * cluster.area / cluster.perimeter
+    : 0
   const margin = Math.max(64, Math.ceil(3 * estimatedBandWidth))
   return {
-    x: Math.max(0, minX - margin),
-    y: Math.max(0, minY - margin),
-    right: Math.min(mask.width, maxX + 1 + margin),
-    bottom: Math.min(mask.height, maxY + 1 + margin),
+    x: Math.max(0, cluster.minX - margin),
+    y: Math.max(0, cluster.minY - margin),
+    right: Math.min(mask.width, cluster.maxX + 1 + margin),
+    bottom: Math.min(mask.height, cluster.maxY + 1 + margin),
+    estimatedBandWidth,
   }
+}
+
+function createClusterMask(
+  cluster: MaskCluster,
+  cropX: number,
+  cropY: number,
+  cropWidth: number,
+  cropHeight: number,
+  sourceWidth: number,
+) {
+  const output = new ImageData(cropWidth, cropHeight)
+  for (const component of cluster.components) {
+    for (const index of component.indices) {
+      const x = index % sourceWidth
+      const y = Math.floor(index / sourceWidth)
+      const outputIndex = ((y - cropY) * cropWidth + x - cropX) * 4
+      output.data[outputIndex] = 255
+      output.data[outputIndex + 1] = 255
+      output.data[outputIndex + 2] = 255
+      output.data[outputIndex + 3] = 255
+    }
+  }
+  return output
 }
 
 function cropImageData(image: ImageData, x: number, y: number, width: number, height: number) {
@@ -123,61 +252,71 @@ function padImageWithEdgePixels(
   return output
 }
 
-export async function prepareImageAndMaskForInpaint(
+export async function prepareImageAndMasksForInpaint(
   image: ImageData,
   mask: ImageData,
-): Promise<PreparedInpaintInput> {
+  maxCrops = 4,
+) {
   if (image.width !== mask.width || image.height !== mask.height)
     throw new Error("Inpaint image and mask must have the same size")
 
-  const bounds = getMaskBounds(mask)
-  if (!bounds)
-    throw new Error("Cannot prepare an empty inpaint mask")
-  const cropX = bounds.x
-  const cropY = bounds.y
-  const cropWidth = bounds.right - bounds.x
-  const cropHeight = bounds.bottom - bounds.y
-  const croppedImage = cropImageData(image, cropX, cropY, cropWidth, cropHeight)
-  const croppedMask = cropImageData(mask, cropX, cropY, cropWidth, cropHeight)
+  const components = findMaskComponents(mask)
+  const clusters = clusterMaskComponents(components, maxCrops)
+  const prepared: PreparedInpaintInput[] = []
 
-  const scale = Math.min(staticInputSize / cropWidth, staticInputSize / cropHeight)
-  const contentWidth = Math.max(1, Math.round(cropWidth * scale))
-  const contentHeight = Math.max(1, Math.round(cropHeight * scale))
-  const contentX = Math.floor((staticInputSize - contentWidth) / 2)
-  const contentY = Math.floor((staticInputSize - contentHeight) / 2)
-  const scaledImage = await scaleImageData(croppedImage, contentWidth, contentHeight)
-  const scaledMask = await scaleImageData(croppedMask, contentWidth, contentHeight)
-  binarizeMask(scaledMask)
-
-  const paddedImage = padImageWithEdgePixels(
-    scaledImage,
-    staticInputSize,
-    staticInputSize,
-    contentX,
-    contentY,
-  )
-  const maskCanvas = getCanvas(staticInputSize, staticInputSize)
-  maskCanvas.ctx.drawImage(await createImageBitmap(scaledMask), contentX, contentY)
-
-  return {
-    image: paddedImage,
-    mask: maskCanvas.ctx.getImageData(0, 0, staticInputSize, staticInputSize),
-    contentX,
-    contentY,
-    contentWidth,
-    contentHeight,
-    cropX,
-    cropY,
-    cropWidth,
-    cropHeight,
+  for (const cluster of clusters) {
+    const bounds = getClusterBounds(mask, cluster)
+    const cropWidth = bounds.right - bounds.x
+    const cropHeight = bounds.bottom - bounds.y
+    const clusterMask = createClusterMask(
+      cluster,
+      bounds.x,
+      bounds.y,
+      cropWidth,
+      cropHeight,
+      mask.width,
+    )
+    const croppedImage = cropImageData(image, bounds.x, bounds.y, cropWidth, cropHeight)
+    const scale = Math.min(staticInputSize / cropWidth, staticInputSize / cropHeight)
+    const contentWidth = Math.max(1, Math.round(cropWidth * scale))
+    const contentHeight = Math.max(1, Math.round(cropHeight * scale))
+    const contentX = Math.floor((staticInputSize - contentWidth) / 2)
+    const contentY = Math.floor((staticInputSize - contentHeight) / 2)
+    const scaledImage = await scaleImageData(croppedImage, contentWidth, contentHeight)
+    const scaledMask = await scaleImageData(clusterMask, contentWidth, contentHeight)
+    binarizeMask(scaledMask, 64)
+    const paddedImage = padImageWithEdgePixels(
+      scaledImage,
+      staticInputSize,
+      staticInputSize,
+      contentX,
+      contentY,
+    )
+    const maskCanvas = getCanvas(staticInputSize, staticInputSize)
+    maskCanvas.ctx.drawImage(await createImageBitmap(scaledMask), contentX, contentY)
+    prepared.push({
+      image: paddedImage,
+      mask: maskCanvas.ctx.getImageData(0, 0, staticInputSize, staticInputSize),
+      contentX,
+      contentY,
+      contentWidth,
+      contentHeight,
+      cropX: bounds.x,
+      cropY: bounds.y,
+      cropWidth,
+      cropHeight,
+      estimatedModelMaskWidth: bounds.estimatedBandWidth * scale,
+      restoreMask: clusterMask,
+    })
   }
+
+  return prepared
 }
 
-export async function restoreInpaintOutput(
+export async function restoreInpaintOutputInto(
+  target: ImageData,
   output: ImageData,
   prepared: PreparedInpaintInput,
-  width: number,
-  height: number,
 ) {
   const { ctx } = getCanvas(prepared.contentWidth, prepared.contentHeight)
   const outputBitmap = await createImageBitmap(output)
@@ -197,25 +336,22 @@ export async function restoreInpaintOutput(
     prepared.cropWidth,
     prepared.cropHeight,
   )
-  const fullOutput = new ImageData(width, height)
   for (let y = 0; y < prepared.cropHeight; y++) {
-    const sourceStart = y * prepared.cropWidth * 4
-    const sourceEnd = sourceStart + prepared.cropWidth * 4
-    const targetStart = ((prepared.cropY + y) * width + prepared.cropX) * 4
-    fullOutput.data.set(restoredCrop.data.subarray(sourceStart, sourceEnd), targetStart)
+    for (let x = 0; x < prepared.cropWidth; x++) {
+      const sourceIndex = (y * prepared.cropWidth + x) * 4
+      if (prepared.restoreMask.data[sourceIndex] < 128)
+        continue
+      const targetIndex = (
+        (prepared.cropY + y) * target.width
+        + prepared.cropX + x
+      ) * 4
+      target.data[targetIndex] = restoredCrop.data[sourceIndex]
+      target.data[targetIndex + 1] = restoredCrop.data[sourceIndex + 1]
+      target.data[targetIndex + 2] = restoredCrop.data[sourceIndex + 2]
+      target.data[targetIndex + 3] = 255
+    }
   }
-  return fullOutput
-}
-
-export async function scaleImageAndMaskDataForInpaint(image: ImageData, mask: ImageData) {
-  const scaledImageData = await scaleImageData(image, staticInputSize, staticInputSize)
-  // const scaledMask = await scaleImageData(mask, staticInputSize, staticInputSize, "pixelated")
-  const scaledMask = await scaleImageData(mask, staticInputSize, staticInputSize)
-  binarizeMask(scaledMask)
-  return {
-    scaledImageData,
-    scaledMask,
-  }
+  return target
 }
 
 function binarizeMask(mask: ImageData, threshold = 128) {
