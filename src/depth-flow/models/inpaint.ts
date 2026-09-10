@@ -180,6 +180,14 @@ function clusterMaskComponents(components: MaskComponent[], maxClusters = 4) {
   return clusters
 }
 
+function estimateModelMaskWidth(mask: ImageData, cluster: MaskCluster) {
+  const bounds = getClusterBounds(mask, cluster)
+  const cropWidth = bounds.right - bounds.x
+  const cropHeight = bounds.bottom - bounds.y
+  const scale = Math.min(staticInputSize / cropWidth, staticInputSize / cropHeight)
+  return bounds.estimatedBandWidth * scale
+}
+
 function getClusterBounds(mask: ImageData, cluster: MaskCluster) {
   const estimatedBandWidth = cluster.perimeter > 0
     ? 2 * cluster.area / cluster.perimeter
@@ -255,13 +263,25 @@ function padImageWithEdgePixels(
 export async function prepareImageAndMasksForInpaint(
   image: ImageData,
   mask: ImageData,
-  maxCrops = 4,
+  initialCrops = 4,
 ) {
   if (image.width !== mask.width || image.height !== mask.height)
     throw new Error("Inpaint image and mask must have the same size")
 
   const components = findMaskComponents(mask)
-  const clusters = clusterMaskComponents(components, maxCrops)
+  const maximumCrops = Math.min(8, components.length)
+  let cropCount = Math.min(Math.max(1, initialCrops), maximumCrops)
+  let clusters = clusterMaskComponents(components, cropCount)
+  // Preserve the four-crop fast path when it retains enough mask bandwidth,
+  // but split up to eight ways when downscaling would make a cluster too thin
+  // for the fixed-size LaMa input.
+  while (
+    cropCount < maximumCrops
+    && clusters.some(cluster => estimateModelMaskWidth(mask, cluster) < 12)
+  ) {
+    cropCount++
+    clusters = clusterMaskComponents(components, cropCount)
+  }
   const prepared: PreparedInpaintInput[] = []
 
   for (const cluster of clusters) {

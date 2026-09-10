@@ -132,6 +132,7 @@ function calculateTopVisibility(
 
 function calculateSoftDisocclusion(
   disparity: Float32Array,
+  valueSource: Float32Array,
   width: number,
   height: number,
   rho: number,
@@ -139,7 +140,7 @@ function calculateSoftDisocclusion(
 ) {
   const score = new Float32Array(disparity.length)
   const softDisocclusion = new Float32Array(disparity.length)
-  const farReference = new Float32Array(disparity)
+  const farReference = new Float32Array(valueSource)
 
   const envelope = new Float32Array(Math.max(width, height))
   const argmin = new Int32Array(Math.max(width, height))
@@ -170,7 +171,7 @@ function calculateSoftDisocclusion(
       const axisScore = disparity[index] - envelope[i]
       if (axisScore > score[index]) {
         score[index] = axisScore
-        farReference[index] = disparity[start + argmin[i] * stride]
+        farReference[index] = valueSource[start + argmin[i] * stride]
       }
     }
   }
@@ -191,18 +192,22 @@ function calculateSoftDisocclusion(
 export async function createSoftLayeringDiagnostics(
   topDisparity: ImageData,
   disocclusionDisparity: ImageData,
+  farReferenceValueSource: ImageData,
   args: SoftLayeringArgs,
 ): Promise<SoftLayeringDiagnostics> {
   if (
     topDisparity.width !== disocclusionDisparity.width
     || topDisparity.height !== disocclusionDisparity.height
+    || topDisparity.width !== farReferenceValueSource.width
+    || topDisparity.height !== farReferenceValueSource.height
   ) {
-    throw new Error("Top and disocclusion disparity maps must have the same size")
+    throw new Error("Soft-layering disparity maps must have the same size")
   }
 
   const { width, height } = topDisparity
   const topValues = valuesFromImageData(topDisparity)
   const disocclusionValues = valuesFromImageData(disocclusionDisparity)
+  const farReferenceValues = valuesFromImageData(farReferenceValueSource)
   const gradientMagnitude = calculateSobelMagnitude(topValues, width, height)
   const topVisibility = calculateTopVisibility(
     gradientMagnitude,
@@ -211,6 +216,7 @@ export async function createSoftLayeringDiagnostics(
   )
   const { score, softDisocclusion, farReference } = calculateSoftDisocclusion(
     disocclusionValues,
+    farReferenceValues,
     width,
     height,
     args.disocclusionRho,

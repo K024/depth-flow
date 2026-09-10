@@ -166,7 +166,7 @@ export async function dilateImageData(imageData: ImageData, radius: number, filt
 }
 
 
-export function circularDilateImageData(imageData: ImageData, radius: number) {
+export function circularDilateGrayscale(imageData: ImageData, radius: number) {
   radius = Math.round(radius)
   if (radius <= 0)
     return cloneImageData(imageData)

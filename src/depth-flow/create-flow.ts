@@ -2,7 +2,7 @@ import { getCachedFile } from "./file-cache"
 import { saveFlowZip } from "./flow-file"
 import { consoleLogImageData } from "./image/console"
 import {
-  circularDilateImageData,
+  circularDilateGrayscale,
   dilateImageData,
   gaussianBlurImageData,
   getImageData,
@@ -166,7 +166,7 @@ export async function createSlideFlow(
   // Keep all layering analysis on the depth model's native grid. D_pool is
   // used for disocclusion; its blurred form D_top drives both rendered Top
   // geometry and visibility so their transition bands stay aligned.
-  const pooledDepthMap = circularDilateImageData(depthMap, normalizedArgs.poolRadius)
+  const pooledDepthMap = circularDilateGrayscale(depthMap, normalizedArgs.poolRadius)
   const nativeTopDepthMap = gaussianBlurImageData(
     pooledDepthMap,
     normalizedArgs.blurSigma,
@@ -175,6 +175,7 @@ export async function createSlideFlow(
   const diagnostics = await createSoftLayeringDiagnostics(
     nativeTopDepthMap,
     pooledDepthMap,
+    depthMap,
     normalizedArgs,
   )
   const repairMasks = await createRepairMasks(
@@ -197,14 +198,17 @@ export async function createSlideFlow(
     rawTopVisibility,
     repairMasks.fullResolutionBlendMask,
   )
+  let lowVisibilityPixels = 0
   let opaquePixels = 0
   for (let i = 0; i < topVisibility.data.length; i += 4) {
+    if (topVisibility.data[i] < 128)
+      lowVisibilityPixels++
     if (topVisibility.data[i] === 255)
       opaquePixels++
   }
-  diagnostics.stats.opaqueVisibilityRatio = opaquePixels / (
-    topVisibility.width * topVisibility.height
-  )
+  const visibilityPixels = topVisibility.width * topVisibility.height
+  diagnostics.stats.lowVisibilityRatio = lowVisibilityPixels / visibilityPixels
+  diagnostics.stats.opaqueVisibilityRatio = opaquePixels / visibilityPixels
   const images = [
     ["sourceDisparity", diagnostics.sourceDisparity],
     ["gradientMagnitude", diagnostics.gradientMagnitude],

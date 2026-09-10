@@ -1,5 +1,5 @@
 import {
-  circularDilateImageData,
+  circularDilateGrayscale,
   cloneImageData,
   gaussianBlurImageData,
   scaleImageData,
@@ -68,7 +68,7 @@ export async function createRepairMasks(
   )
   const outputDilateRadius = Math.round(args.repairDilateRadius * nativeToOutputScale)
   const fullResolutionRepairMask = outputDilateRadius > 0
-    ? circularDilateImageData(fullThresholded.image, outputDilateRadius)
+    ? circularDilateGrayscale(fullThresholded.image, outputDilateRadius)
     : fullThresholded.image
   const fullResolutionBlendMask = gaussianBlurImageData(fullResolutionRepairMask, 2.5, true)
   // Feather inward only. Outside the repair mask Bottom must remain exactly

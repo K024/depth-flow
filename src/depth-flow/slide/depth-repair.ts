@@ -12,8 +12,11 @@ export interface BottomDepthRepairStats {
   maskedMeanDisparity: number
   highGradientRatio: number
   gradientP99Lsb: number
+  interiorGradientRatio: number
+  interiorGradientP99Lsb: number
   aboveBoundaryMedianRatio: number
   epsilonGapRatio: number
+  haloResidualLsb: number
 }
 
 function percentile(values: number[], p: number) {
@@ -21,6 +24,72 @@ function percentile(values: number[], p: number) {
     return 0
   values.sort((a, b) => a - b)
   return values[Math.min(values.length - 1, Math.floor(p * values.length))]
+}
+
+function chamferDistance(
+  active: Uint8Array,
+  width: number,
+  height: number,
+  distanceToActive: boolean,
+) {
+  const distance = new Uint32Array(active.length)
+  const infinity = 0x3fffffff
+  for (let index = 0; index < active.length; index++) {
+    const isTarget = distanceToActive ? active[index] !== 0 : active[index] === 0
+    distance[index] = isTarget ? 0 : infinity
+  }
+
+  const relax = (index: number, neighbor: number, cost: number) => {
+    distance[index] = Math.min(distance[index], distance[neighbor] + cost)
+  }
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = y * width + x
+      if (distance[index] === 0)
+        continue
+      if (x > 0)
+        relax(index, index - 1, 3)
+      if (y > 0) {
+        relax(index, index - width, 3)
+        if (x > 0)
+          relax(index, index - width - 1, 4)
+        if (x + 1 < width)
+          relax(index, index - width + 1, 4)
+      }
+      if (
+        !distanceToActive
+        && (x === 0 || y === 0 || x + 1 === width || y + 1 === height)
+      ) {
+        distance[index] = Math.min(distance[index], 3)
+      }
+    }
+  }
+
+  for (let y = height - 1; y >= 0; y--) {
+    for (let x = width - 1; x >= 0; x--) {
+      const index = y * width + x
+      if (distance[index] === 0)
+        continue
+      if (x + 1 < width)
+        relax(index, index + 1, 3)
+      if (y + 1 < height) {
+        relax(index, index + width, 3)
+        if (x > 0)
+          relax(index, index + width - 1, 4)
+        if (x + 1 < width)
+          relax(index, index + width + 1, 4)
+      }
+      if (
+        !distanceToActive
+        && (x === 0 || y === 0 || x + 1 === width || y + 1 === height)
+      ) {
+        distance[index] = Math.min(distance[index], 3)
+      }
+    }
+  }
+
+  return distance
 }
 
 export function repairBottomDepth(
@@ -46,7 +115,6 @@ export function repairBottomDepth(
   const source = new Float32Array(pixelCount)
   const top = new Float32Array(pixelCount)
   const far = new Float32Array(pixelCount)
-  const blend = new Float32Array(pixelCount)
   const active = new Uint8Array(pixelCount)
 
   for (let index = 0; index < pixelCount; index++) {
@@ -54,7 +122,6 @@ export function repairBottomDepth(
     source[index] = sourceDisparity.data[offset] / 255
     top[index] = topDisparity.data[offset] / 255
     far[index] = farReference.data[offset] / 255
-    blend[index] = blendMask.data[offset] / 255
     active[index] = blendMask.data[offset] > 0 ? 1 : 0
   }
 
@@ -111,13 +178,9 @@ export function repairBottomDepth(
   let epsilonGapPixels = 0
 
   for (let index = 0; index < pixelCount; index++) {
-    if (!active[index])
-      continue
-
-    const repaired = Math.max(0, Math.min(current[index], top[index] - epsilon))
-    // Use the same inward feather as RGB so geometry and texture transition
-    // over exactly the same support. Outside it Bottom remains identical to Top.
-    const bottom = top[index] + (repaired - top[index]) * blend[index]
+    const bottom = active[index]
+      ? Math.max(0, Math.min(current[index], top[index] - epsilon))
+      : Math.min(top[index], source[index])
     const byteValue = Math.round(bottom * 255)
     const offset = index * 4
     output.data[offset] = byteValue
@@ -135,8 +198,16 @@ export function repairBottomDepth(
     }
   }
 
+  const diagnosticMask = new Uint8Array(pixelCount)
+  for (let index = 0; index < pixelCount; index++)
+    diagnosticMask[index] = blendMask.data[index * 4] >= 128 ? 1 : 0
+  const interiorDistance = chamferDistance(diagnosticMask, width, height, false)
+  const exteriorDistance = chamferDistance(active, width, height, true)
+
   const gradients: number[] = []
+  const interiorGradients: number[] = []
   let highGradients = 0
+  let highInteriorGradients = 0
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const index = y * width + x
@@ -150,7 +221,22 @@ export function repairBottomDepth(
       gradients.push(gradient)
       if (gradient > 4)
         highGradients++
+      // 3-4 chamfer distances are stored in thirds of a pixel.
+      if (interiorDistance[index] >= 12) {
+        interiorGradients.push(gradient)
+        if (gradient > 4)
+          highInteriorGradients++
+      }
     }
+  }
+
+  let haloResidualSum = 0
+  let haloResidualPixels = 0
+  for (let index = 0; index < pixelCount; index++) {
+    if (active[index] || exteriorDistance[index] > 6)
+      continue
+    haloResidualSum += topDisparity.data[index * 4] - output.data[index * 4]
+    haloResidualPixels++
   }
 
   // Diagnostic only: compare every repaired component against the median of
@@ -214,10 +300,17 @@ export function repairBottomDepth(
       maskedMeanDisparity: maskedPixels > 0 ? maskedSum / maskedPixels : 0,
       highGradientRatio: gradients.length > 0 ? highGradients / gradients.length : 0,
       gradientP99Lsb: percentile(gradients, 0.99),
+      interiorGradientRatio: interiorGradients.length > 0
+        ? highInteriorGradients / interiorGradients.length
+        : 0,
+      interiorGradientP99Lsb: percentile(interiorGradients, 0.99),
       aboveBoundaryMedianRatio: boundaryComparedPixels > 0
         ? aboveBoundaryMedian / boundaryComparedPixels
         : 0,
       epsilonGapRatio: maskedPixels > 0 ? epsilonGapPixels / maskedPixels : 0,
+      haloResidualLsb: haloResidualPixels > 0
+        ? haloResidualSum / haloResidualPixels
+        : 0,
     } satisfies BottomDepthRepairStats,
   }
 }
