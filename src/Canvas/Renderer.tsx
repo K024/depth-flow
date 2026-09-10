@@ -17,7 +17,13 @@ const currentRenderer = signal<{
 
 
 export function setRenderer(renderer: typeof currentRenderer.value | null) {
-  currentRenderer.value = renderer || undefined
+  const nextRenderer = renderer || undefined
+  const previousRenderer = currentRenderer.value
+  if (previousRenderer === nextRenderer)
+    return
+
+  previousRenderer?.dispose()
+  currentRenderer.value = nextRenderer
 }
 
 
@@ -59,6 +65,12 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
 
     let animationFrame: number | null = null
     function frame() {
+      // AnimatePresence keeps the previous renderer mounted during its exit
+      // animation. setRenderer() has already disposed that renderer, so its
+      // pending RAF must stop before it tries to render again.
+      if (currentRenderer.value !== renderer)
+        return
+
       animationFrame = requestAnimationFrame(frame)
       timer.poll()
 
@@ -88,7 +100,6 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
     return () => {
       if (animationFrame) cancelAnimationFrame(animationFrame)
       el.removeChild(canvas)
-      renderer.dispose()
     }
   }, [renderer?.key])
 

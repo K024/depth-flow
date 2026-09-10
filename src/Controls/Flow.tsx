@@ -74,6 +74,7 @@ const {
 const reset = () => {
   flowFile.value = null
   rendererFlowFile = null
+  setRenderer(null)
   resetRenderer()
 }
 
