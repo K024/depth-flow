@@ -14,8 +14,6 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
   const gl: WebGL2RenderingContext = context
 
   const program = twgl.createProgramInfo(gl, [vertSrc, fragSrc])
-  const drawCallTimer = createGpuDrawCallTimer(gl)
-
   const plane = new Float32Array([
     -1, -1, -1, 1, 1, 1,
     -1, -1, 1, 1, 1, -1,
@@ -33,8 +31,8 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
 
   // functions
 
-  function beforeFrameRender() {
-    twgl.resizeCanvasToDisplaySize(canvas, window.devicePixelRatio || 1)
+  function beforeFrameRender(pixelRatio: number) {
+    twgl.resizeCanvasToDisplaySize(canvas, pixelRatio)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, canvas.width, canvas.height)
     gl.clear(gl.COLOR_BUFFER_BIT)
@@ -42,12 +40,12 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
   }
 
 
-  function renderWithUniforms(uniforms: Record<string, any>) {
+  function renderWithUniforms(uniforms: Record<string, any>, timer: InternalRendererTimer) {
     gl.useProgram(program.program)
     twgl.setUniforms(program, uniforms)
-    drawCallTimer.begin()
+    timer.begin()
     twgl.drawBufferInfo(gl, buffers)
-    drawCallTimer.end()
+    timer.end()
   }
 
 
@@ -61,6 +59,21 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
     })
   }
 
+  function dispose() {
+    const deletedBuffers = new Set<WebGLBuffer>()
+    for (const attribute of Object.values(buffers.attribs ?? {})) {
+      if (attribute.buffer && !deletedBuffers.has(attribute.buffer)) {
+        gl.deleteBuffer(attribute.buffer)
+        deletedBuffers.add(attribute.buffer)
+      }
+    }
+    if (buffers.indices && !deletedBuffers.has(buffers.indices)) {
+      gl.deleteBuffer(buffers.indices)
+      deletedBuffers.add(buffers.indices)
+    }
+    gl.deleteProgram(program.program)
+  }
+
 
   return {
     gl,
@@ -69,20 +82,37 @@ export function createPlaneShaderProgram(canvas: HTMLCanvasElement, fragSrc: str
     beforeFrameRender,
     renderWithUniforms,
     createTexture,
-    drawCallTimer,
+    dispose,
   }
 }
 
 
-export interface FrameCounter {
+export type RendererTimerMode = "noop" | "performance" | "gl"
+
+/**
+ * Read-only statistics for the renderer's draw calls.
+ *
+ * `performance` timers measure CPU wall-clock time around the draw call.
+ * `gl` timers measure GPU elapsed time when
+ * EXT_disjoint_timer_query_webgl2 is available. `noop` records nothing.
+ */
+export interface RendererTimer {
+  readonly kind: RendererTimerMode
+  readonly supported: boolean
   poll: () => void
   reset: () => void
-  supported: boolean
-  totalTime: number
-  totalRenders: number
-  averageTime: number
-  p95Time: number
-  p99Time: number
+  readonly totalTime: number
+  readonly sampleCount: number
+  readonly averageTime: number
+  readonly p95Time: number
+  readonly p99Time: number
+}
+
+interface InternalRendererTimer {
+  readonly timer: RendererTimer
+  begin: () => void
+  end: () => void
+  dispose: () => void
 }
 
 interface DisjointTimerQueryWebGL2 {
@@ -90,33 +120,93 @@ interface DisjointTimerQueryWebGL2 {
   readonly GPU_DISJOINT_EXT: number
 }
 
-interface PendingGpuQuery {
-  query: WebGLQuery
-  generation: number
+function percentile(samples: readonly number[], percent: number) {
+  if (samples.length === 0)
+    return 0
+  const sorted = [...samples].sort((a, b) => a - b)
+  const index = Math.ceil(percent * sorted.length) - 1
+  return sorted[Math.max(0, index)]
 }
 
-export function createGpuDrawCallTimer(gl: WebGL2RenderingContext): FrameCounter & {
-  begin: () => void
-  end: () => void
-} {
+function createTimerStats(kind: RendererTimerMode, supported: boolean, samples: () => readonly number[], totalTime: () => number, poll: () => void, reset: () => void): RendererTimer {
+  return {
+    kind,
+    supported,
+    poll,
+    reset,
+    get totalTime() { return totalTime() },
+    get sampleCount() { return samples().length },
+    get averageTime() {
+      const values = samples()
+      return values.length > 0 ? totalTime() / values.length : 0
+    },
+    get p95Time() { return percentile(samples(), 0.95) },
+    get p99Time() { return percentile(samples(), 0.99) },
+  }
+}
+
+const maxTimerSamples = 240
+
+function addSample(samples: number[], value: number) {
+  samples.push(value)
+  return samples.length > maxTimerSamples ? samples.shift() : undefined
+}
+
+function createNoopTimer(): InternalRendererTimer {
+  const timer = createTimerStats("noop", false, () => [], () => 0, () => {}, () => {})
+  return { timer, begin: () => {}, end: () => {}, dispose: () => {} }
+}
+
+function createPerformanceTimer(): InternalRendererTimer {
+  const samples: number[] = []
+  let totalTime = 0
+  let startTime: number | undefined
+
+  function reset() {
+    samples.length = 0
+    totalTime = 0
+    startTime = undefined
+  }
+
+  const timer = createTimerStats("performance", true, () => samples, () => totalTime, () => {}, reset)
+  return {
+    timer,
+    begin: () => {
+      startTime = performance.now()
+    },
+    end: () => {
+      if (startTime === undefined)
+        return
+      const elapsed = performance.now() - startTime
+      startTime = undefined
+      const evicted = addSample(samples, elapsed)
+      totalTime += elapsed
+      if (evicted !== undefined)
+        totalTime -= evicted
+    },
+    dispose: reset,
+  }
+}
+
+function createGlTimer(gl: WebGL2RenderingContext): InternalRendererTimer {
   const ext = gl.getExtension("EXT_disjoint_timer_query_webgl2") as DisjointTimerQueryWebGL2 | null
   if (!ext)
-    console.warn("EXT_disjoint_timer_query_webgl2 is unavailable; GPU draw-call timing is disabled")
+    return createNoopTimer()
+  const timerExtension = ext
 
   const maxPendingQueries = 64
-  const pendingQueries: PendingGpuQuery[] = []
+  const pendingQueries: WebGLQuery[] = []
   let activeQuery: WebGLQuery | null = null
-  let samples: number[] = []
+  const samples: number[] = []
   let totalTime = 0
-  let generation = 0
 
   function discardPendingQueries() {
     if (activeQuery) {
-      gl.endQuery(ext!.TIME_ELAPSED_EXT)
+      gl.endQuery(timerExtension.TIME_ELAPSED_EXT)
       gl.deleteQuery(activeQuery)
       activeQuery = null
     }
-    for (const { query } of pendingQueries)
+    for (const query of pendingQueries)
       gl.deleteQuery(query)
     pendingQueries.length = 0
   }
@@ -125,74 +215,76 @@ export function createGpuDrawCallTimer(gl: WebGL2RenderingContext): FrameCounter
     if (!ext)
       return
 
-    if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+    if (gl.getParameter(timerExtension.GPU_DISJOINT_EXT)) {
       discardPendingQueries()
       return
     }
 
     while (pendingQueries.length > 0) {
-      const pending = pendingQueries[0]
-      const available = gl.getQueryParameter(pending.query, gl.QUERY_RESULT_AVAILABLE) as boolean
+      const query = pendingQueries[0]
+      const available = gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE) as boolean
       if (!available)
         break
 
-      const elapsedNanoseconds = gl.getQueryParameter(pending.query, gl.QUERY_RESULT) as number
-      gl.deleteQuery(pending.query)
+      const elapsedNanoseconds = gl.getQueryParameter(query, gl.QUERY_RESULT) as number
+      gl.deleteQuery(query)
       pendingQueries.shift()
 
-      if (pending.generation !== generation)
-        continue
-
       const elapsedMilliseconds = elapsedNanoseconds / 1_000_000
-      samples.push(elapsedMilliseconds)
+      const evicted = addSample(samples, elapsedMilliseconds)
       totalTime += elapsedMilliseconds
+      if (evicted !== undefined)
+        totalTime -= evicted
     }
   }
 
-  function percentile(percent: number) {
-    if (samples.length === 0)
-      return 0
-    const sorted = [...samples].sort((a, b) => a - b)
-    const index = Math.ceil(percent * sorted.length) - 1
-    return sorted[Math.max(0, index)]
+  function reset() {
+    discardPendingQueries()
+    samples.length = 0
+    totalTime = 0
   }
 
+  const timer = createTimerStats("gl", true, () => samples, () => totalTime, poll, reset)
   return {
-    supported: ext !== null,
+    timer,
     begin: () => {
       poll()
-      if (!ext || activeQuery || pendingQueries.length >= maxPendingQueries)
+      if (activeQuery || pendingQueries.length >= maxPendingQueries)
         return
 
       const query = gl.createQuery()
       if (!query)
         return
 
-      gl.beginQuery(ext.TIME_ELAPSED_EXT, query)
+      gl.beginQuery(timerExtension.TIME_ELAPSED_EXT, query)
       activeQuery = query
     },
     end: () => {
-      if (!ext || !activeQuery)
+      if (!activeQuery)
         return
 
-      gl.endQuery(ext.TIME_ELAPSED_EXT)
-      pendingQueries.push({ query: activeQuery, generation })
+      gl.endQuery(timerExtension.TIME_ELAPSED_EXT)
+      pendingQueries.push(activeQuery)
       activeQuery = null
     },
-    reset: () => {
-      generation += 1
-      samples = []
-      totalTime = 0
-    },
-    poll,
-    get totalTime() { return totalTime },
-    get totalRenders() { return samples.length },
-    get averageTime() { return samples.length > 0 ? totalTime / samples.length : 0 },
-    get p95Time() { return percentile(0.95) },
-    get p99Time() { return percentile(0.99) },
+    dispose: reset,
   }
 }
 
+export function createRendererTimer(mode: RendererTimerMode, gl: WebGL2RenderingContext): InternalRendererTimer {
+  switch (mode) {
+    case "performance":
+      return createPerformanceTimer()
+    case "gl":
+      return createGlTimer(gl)
+    case "noop":
+      return createNoopTimer()
+  }
+}
+
+export function defaultRendererPixelRatio() {
+  return typeof window === "undefined" ? 1 : window.devicePixelRatio || 1
+}
 
 export async function createBlurMipmap(image: ImageData, size = 200, blurRadius = 10) {
   const resized = await scaleImageData(image, size, size)

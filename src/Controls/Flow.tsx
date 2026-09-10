@@ -5,7 +5,7 @@ import { signal } from "@preact/signals-react"
 import { useDropzone } from "react-dropzone"
 import { asyncState } from "./utils"
 import { setBackground } from "../Canvas/Background"
-import { createFlowSimpleRenderer } from "../depth-flow/renderer/simple"
+import { createFlowSimpleRenderer, flowSimpleRendererPresets } from "../depth-flow/renderer/simple"
 import type { FlowSimpleRendererPreset } from "../depth-flow/renderer/simple"
 import { createFlowSlideRenderer } from "../depth-flow/renderer/slide"
 import { loadFlowZip } from "../depth-flow/flow-file"
@@ -50,16 +50,21 @@ const {
   const canvas = document.createElement("canvas")
   canvas.width = 800
   canvas.height = 600
+  const rendererOptions = {
+    ...flowSimpleRendererPresets[rendererPreset.value],
+    timer: "gl" as const,
+  }
 
   const renderer = flow.type === "slide"
-    ? await createFlowSlideRenderer(canvas, flow, rendererPreset.value)
-    : await createFlowSimpleRenderer(canvas, flow, rendererPreset.value)
+    ? await createFlowSlideRenderer(canvas, flow, rendererOptions)
+    : await createFlowSimpleRenderer(canvas, flow, rendererOptions)
 
   setBackground(null)
   setRenderer({
     key: Math.random().toString(36).slice(2),
     render: renderer.render,
-    frameCounter: renderer.frameTimeCounter,
+    timer: renderer.timer,
+    dispose: renderer.dispose,
     canvas,
   })
 

@@ -10,6 +10,8 @@ export type {
 
 export {
   calculateZoomScale,
+  type RendererTimer,
+  type RendererTimerMode,
 } from "../src/depth-flow/renderer/common"
 
 export {

@@ -22,6 +22,7 @@ export default defineConfig({
     outDir: "package/dist",
     emptyOutDir: false,
     minify: false,
+    sourcemap: true,
     lib: {
       entry: path.resolve(import.meta.dirname, "package/index.ts"),
     },

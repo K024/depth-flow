@@ -2,7 +2,7 @@ import { signal } from "@preact/signals-react"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import { AnimatePresence, motion, motionValue, springValue } from "motion/react"
 import type { FlowSimpleRendererArgs, Vec3 } from "../depth-flow/renderer/simple"
-import type { FrameCounter } from "../depth-flow/renderer/common"
+import type { RendererTimer } from "../depth-flow/renderer/common"
 
 
 // renderer
@@ -10,7 +10,8 @@ import type { FrameCounter } from "../depth-flow/renderer/common"
 const currentRenderer = signal<{
   key: string
   render: (args: FlowSimpleRendererArgs) => void
-  frameCounter: FrameCounter
+  timer: RendererTimer
+  dispose: () => void
   canvas: HTMLCanvasElement
 }>()
 
@@ -51,7 +52,7 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
     const el = ref.current
     const canvas = renderer.canvas
     const render = renderer.render
-    const frameCounter = renderer.frameCounter
+    const timer = renderer.timer
 
     canvas.className = "absolute left-0 top-0 w-full h-full"
     el.appendChild(canvas)
@@ -59,7 +60,7 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
     let animationFrame: number | null = null
     function frame() {
       animationFrame = requestAnimationFrame(frame)
-      frameCounter.poll()
+      timer.poll()
 
       if (!shouldRender) return
       shouldRender = false
@@ -72,12 +73,12 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
         target: defaultTarget,
         zoomScale: defaultZoomScale,
       })
-      if (frameCounter.totalRenders >= 1000) {
+      if (timer.sampleCount >= 240) {
         console.log(
-          `GPU draw-call time: average ${frameCounter.averageTime.toFixed(2)} ms, ` +
-          `P95 ${frameCounter.p95Time.toFixed(2)} ms, P99 ${frameCounter.p99Time.toFixed(2)} ms`
+          `${timer.kind} draw-call time: average ${timer.averageTime.toFixed(2)} ms, ` +
+          `P95 ${timer.p95Time.toFixed(2)} ms, P99 ${timer.p99Time.toFixed(2)} ms`
         )
-        frameCounter.reset()
+        timer.reset()
       }
     }
 
@@ -87,6 +88,7 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
     return () => {
       if (animationFrame) cancelAnimationFrame(animationFrame)
       el.removeChild(canvas)
+      renderer.dispose()
     }
   }, [renderer?.key])
 

@@ -29,6 +29,7 @@ async function main() {
   const renderer = await createFlowSimpleRenderer(canvas, flow, {
     forwardSteps: 120,
     backwardSteps: 8,
+    timer: "gl",
   })
 
   const origin: [number, number, number] = [0, 0, -30]
@@ -39,6 +40,7 @@ async function main() {
 
   const renderLoop = () => {
     requestAnimationFrame(renderLoop)
+    renderer.timer.poll()
     if (originChanged) {
       renderer.render({ origin, target, zoomScale })
     }
@@ -84,6 +86,19 @@ Renderer creation options:
 |-----------|-------|---------|-------------|
 | `forwardSteps` | `16–256` | `120` | Controls primary ray-marching quality and GPU cost |
 | `backwardSteps` | `1–16` | `8` | Controls hit refinement quality |
+| `edgeBlurThreshold` | `0–0.25` | `0.05` | Controls the soft blur at the image edge |
+| `blurMipmapSize` | `1–4096` | `200` | Size of the precomputed edge-blur texture |
+| `blurMipmapRadius` | `0–100` | `10` | Blur radius for that texture |
+| `pixelRatio` | `0.25–4` | device pixel ratio | Canvas rendering resolution scale |
+| `timer` | `"noop" \| "performance" \| "gl"` | `"noop"` | Optional draw-call timing mode |
+
+Call `renderer.dispose()` when the canvas is no longer needed.
+
+Timer modes:
+
+- `"noop"`: default; no timing overhead.
+- `"performance"`: measures CPU time around the draw call.
+- `"gl"`: measures GPU draw-call time when the browser supports `EXT_disjoint_timer_query_webgl2`; otherwise it falls back to noop.
 
 Built-in presets are exported as `flowSimpleRendererPresets`:
 
