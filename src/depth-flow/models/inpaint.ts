@@ -154,6 +154,9 @@ function clusterMaskComponents(components: MaskComponent[], maxClusters = 4) {
         const unionArea = (maxX - minX + 1) * (maxY - minY + 1)
         const firstArea = (first.maxX - first.minX + 1) * (first.maxY - first.minY + 1)
         const secondArea = (second.maxX - second.minX + 1) * (second.maxY - second.minY + 1)
+        // Merge the pair that adds the least empty bbox area. This keeps each
+        // fixed 512x512 LaMa crop focused on actual repair pixels instead of
+        // wasting model resolution on gaps between distant components.
         const cost = unionArea - firstArea - secondArea
         if (cost < bestCost) {
           bestCost = cost
@@ -189,6 +192,9 @@ function estimateModelMaskWidth(mask: ImageData, cluster: MaskCluster) {
 }
 
 function getClusterBounds(mask: ImageData, cluster: MaskCluster) {
+  // For a long band, 2*area/perimeter approximates its width. Three widths of
+  // context (at least 64 source pixels) gives LaMa surrounding texture without
+  // reverting to a detail-destroying full-image letterbox.
   const estimatedBandWidth = cluster.perimeter > 0
     ? 2 * cluster.area / cluster.perimeter
     : 0
@@ -274,7 +280,9 @@ export async function prepareImageAndMasksForInpaint(
   let clusters = clusterMaskComponents(components, cropCount)
   // Preserve the four-crop fast path when it retains enough mask bandwidth,
   // but split up to eight ways when downscaling would make a cluster too thin
-  // for the fixed-size LaMa input.
+  // for the fixed-size LaMa input. Twelve model pixels is the quality target;
+  // the eight-crop cap bounds WASM inference cost, so a difficult image may
+  // stop slightly below the target rather than doubling latency again.
   while (
     cropCount < maximumCrops
     && clusters.some(cluster => estimateModelMaskWidth(mask, cluster) < 12)
@@ -304,6 +312,9 @@ export async function prepareImageAndMasksForInpaint(
     const contentY = Math.floor((staticInputSize - contentHeight) / 2)
     const scaledImage = await scaleImageData(croppedImage, contentWidth, contentHeight)
     const scaledMask = await scaleImageData(clusterMask, contentWidth, contentHeight)
+    // A lower post-resize threshold keeps thin antialiased mask bands from
+    // disappearing before inference. Restoration still uses the original hard
+    // cluster mask, preserving zero RGB changes outside the repair region.
     binarizeMask(scaledMask, 64)
     const paddedImage = padImageWithEdgePixels(
       scaledImage,

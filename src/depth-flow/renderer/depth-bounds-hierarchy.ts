@@ -108,6 +108,11 @@ export function createDepthBoundsHierarchy(depthMap: ImageData, channels: number
   while (rawLevels[rawLevels.length - 1].width > 1 || rawLevels[rawLevels.length - 1].height > 1)
     rawLevels.push(createNextLevel(rawLevels[rawLevels.length - 1]))
 
+  // Keep raw levels independent, then add a one-cell 3x3 halo to each. With a
+  // single midpoint lookup this guarantees a covered radius of 2^L texels, so
+  // the shader's L=ceil(log2(rayHalfSpanTexels)) is the minimum safe LOD. Do not
+  // build the next level from haloed data: halos would accumulate and loosen
+  // the bounds, increasing ray-march work.
   return rawLevels.map(addCellHalo)
 }
 

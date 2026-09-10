@@ -120,8 +120,13 @@ function calculateTopVisibility(
   betaStep: number,
 ) {
   const visibility = new Float32Array(gradientMagnitude.length)
-  // Include Sobel's own smoothing variance so the step-height estimate stays
-  // calibrated when the explicit Gaussian sigma is small.
+  // For a Gaussian-blurred disparity step ΔD, the peak gradient is
+  // g ~= ΔD / sqrt(2πσ²). Multiplying by an effective width therefore recovers
+  // the dimensionless step height E, and visibility is A = exp(-βE²).
+  //
+  // Sobel contributes smoothing of its own, represented by the fitted 0.45
+  // variance below. Without it, E/ΔD falls far below the accepted 0.85–1.05
+  // range for σ < 1 and changing Blur Sigma also changes Beta's meaning.
   const effectiveWidth = Math.sqrt(2 * Math.PI * (blurSigma * blurSigma + 0.45))
   for (let i = 0; i < visibility.length; i++) {
     const stepHeight = gradientMagnitude[i] * effectiveWidth
@@ -146,6 +151,12 @@ function calculateSoftDisocclusion(
   const argmin = new Int32Array(Math.max(width, height))
 
   const accumulateLine = (start: number, length: number, stride: number, step: number) => {
+    // Exact two-pass min-plus envelope:
+    //   g(i) = min_j(D(j) + rho * step * |i-j|)
+    // so D(i)-g(i) is the inner max term from SLIDE Eq. 5. The j=i term makes
+    // the score non-negative, eliminating both an arbitrary scan radius and an
+    // explicit ReLU. rho is measured in normalized image-axis coordinates, so
+    // horizontal and vertical scans intentionally do not use the aspect ratio.
     envelope[0] = disparity[start]
     argmin[0] = 0
     for (let i = 1; i < length; i++) {
@@ -171,6 +182,10 @@ function calculateSoftDisocclusion(
       const axisScore = disparity[index] - envelope[i]
       if (axisScore > score[index]) {
         score[index] = axisScore
+        // Geometry is detected on max-pooled disparity so the repair mask stays
+        // conservative and aligned with Top. The value must come from raw depth:
+        // taking it from the pool raises the supposedly far sample near contours
+        // and regresses aboveBoundaryMedianRatio.
         farReference[index] = valueSource[start + argmin[i] * stride]
       }
     }
@@ -183,6 +198,9 @@ function calculateSoftDisocclusion(
   for (let x = 0; x < width; x++)
     accumulateLine(x, height, width, verticalStep)
 
+  // S = tanh(gamma * score). After thresholding at t, the smallest retained
+  // score is atanh(t)/gamma. rho controls band width; gamma and the later
+  // threshold control the soft response to weak disparity steps.
   for (let i = 0; i < score.length; i++)
     softDisocclusion[i] = Math.tanh(gamma * score[i])
 

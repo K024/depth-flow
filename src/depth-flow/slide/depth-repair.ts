@@ -125,8 +125,12 @@ export function repairBottomDepth(
     active[index] = blendMask.data[offset] > 0 ? 1 : 0
   }
 
-  // The max-plus argmin gives the background sample that dominates each
-  // disocclusion. Smooth only argmin-switch seams, not the entire geometry.
+  // The max-plus argmin gives the background sample that geometrically
+  // dominates each disocclusion. Eight Jacobi iterations smooth only local
+  // argmin-switch seams; solving to convergence would over-flatten genuine
+  // background structure. Acceptance is measured both over the full mask and
+  // over its d>=4 px interior, because the two-layer representation necessarily
+  // contains a depth step at the mask boundary.
   let current = new Float32Array(far)
   let next = new Float32Array(pixelCount)
   const dirichletSlack = 0.02
@@ -154,8 +158,10 @@ export function repairBottomDepth(
           sum += current[neighbor]
           count++
         } else if (source[neighbor] <= far[index] + dirichletSlack) {
-          // Only the locally far side is a fixed boundary. The foreground side
-          // is Neumann/free and therefore cannot pull the repair toward Top.
+          // Only the locally far side is a fixed (Dirichlet) boundary. The
+          // foreground side is Neumann/free and therefore cannot pull Bottom
+          // toward Top. This local test is intentionally independent of
+          // blurSigma; the removed seed rule depended on Gaussian leakage.
           sum += source[neighbor]
           count++
         }
@@ -178,6 +184,13 @@ export function repairBottomDepth(
   let epsilonGapPixels = 0
 
   for (let index = 0; index < pixelCount; index++) {
+    // Use the hard active region for depth. Feathering this constraint would
+    // lerp Bottom back toward Top, breaking occlusion ordering and increasing
+    // epsilonGapRatio at the outer rim.
+    //
+    // Outside the repair region, pair original RGB with original depth while
+    // retaining bottom<=top. min(top, source) removes Top's max-pool/blur halo
+    // from Bottom without creating any ordering violations.
     const bottom = active[index]
       ? Math.max(0, Math.min(current[index], top[index] - epsilon))
       : Math.min(top[index], source[index])
@@ -221,7 +234,9 @@ export function repairBottomDepth(
       gradients.push(gradient)
       if (gradient > 4)
         highGradients++
-      // 3-4 chamfer distances are stored in thirds of a pixel.
+      // 3-4 chamfer distances are stored in thirds of a pixel. Exclude the
+      // unavoidable layer boundary and track the accepted interior targets:
+      // high-gradient ratio <= 0.016 and p99 <= 6 LSB for d>=4 px.
       if (interiorDistance[index] >= 12) {
         interiorGradients.push(gradient)
         if (gradient > 4)
@@ -235,12 +250,18 @@ export function repairBottomDepth(
   for (let index = 0; index < pixelCount; index++) {
     if (active[index] || exteriorDistance[index] > 6)
       continue
+    // Historical diagnostic retained for output compatibility: top-bottom is
+    // the amount of Top halo removed, not the residual halo. Do not compare it
+    // with the residual acceptance target. The true residual is bottom-source
+    // in this exterior 1–2 px ring and should satisfy |mean| <= 0.5 LSB.
     haloResidualSum += topDisparity.data[index * 4] - output.data[index * 4]
     haloResidualPixels++
   }
 
   // Diagnostic only: compare every repaired component against the median of
-  // its original, unmasked boundary.
+  // its original, unmasked boundary. This guards against filling the exposed
+  // background with foreground-like (too-near/high-disparity) values; accepted
+  // aboveBoundaryMedianRatio is <= 0.17.
   const seen = new Uint8Array(pixelCount)
   const queue = new Int32Array(pixelCount)
   let aboveBoundaryMedian = 0

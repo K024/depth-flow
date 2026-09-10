@@ -1,8 +1,6 @@
 
 
-export interface FlowSimpleConfig {
-  type?: "simple"
-  version?: 1
+export interface FlowBaseConfig {
   originalImage: string
   originalDepthMap: string
   width: number
@@ -12,10 +10,12 @@ export interface FlowSimpleConfig {
   processArgs: Record<string, any>
 }
 
-export interface FlowSlideConfig extends Pick<
-  FlowSimpleConfig,
-  "originalImage" | "originalDepthMap" | "width" | "height" | "processedBy" | "processArgs"
-> {
+export interface FlowSimpleConfig extends FlowBaseConfig {
+  type?: "simple"
+  version?: 1
+}
+
+export interface FlowSlideConfig extends FlowBaseConfig {
   type: "slide"
   version: 1
   bottomImage: string
@@ -25,9 +25,7 @@ export interface FlowSlideConfig extends Pick<
 export type FlowConfig = FlowSimpleConfig | FlowSlideConfig
 
 
-export interface FlowSimple {
-  type: "simple"
-  version: 1
+export interface FlowBase {
   originalImage: Blob
   originalDepthMap: Blob
   width: number
@@ -37,10 +35,12 @@ export interface FlowSimple {
   processArgs: Record<string, any>
 }
 
-export interface FlowSlide extends Pick<
-  FlowSimple,
-  "originalImage" | "originalDepthMap" | "width" | "height" | "processedBy" | "processArgs"
-> {
+export interface FlowSimple extends FlowBase {
+  type: "simple"
+  version: 1
+}
+
+export interface FlowSlide extends FlowBase {
   type: "slide"
   version: 1
   bottomImage: Blob
@@ -50,6 +50,9 @@ export interface FlowSlide extends Pick<
    * G = top visibility
    * B = bottom depth/disparity
    * A = 255
+   *
+   * The serialized SLIDE config points both layerMap and originalDepthMap to
+   * this image. Its R channel is directly usable by the Simple shader.
    */
   layerMap: Blob
 }

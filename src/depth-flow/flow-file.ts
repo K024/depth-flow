@@ -55,7 +55,10 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
       type: "slide",
       version: 1,
       originalImage: `image.${getBlobNameExtension(flow.originalImage, "png")}`,
-      originalDepthMap: "depth-map.png",
+      // SLIDE's packed layer map is also a valid single-layer depth map because
+      // its R channel stores Top depth. Both fields intentionally reference the
+      // same archive entry to avoid shipping a redundant depth-map.png.
+      originalDepthMap: "layer-map.png",
       bottomImage: "bottom-image.png",
       layerMap: "layer-map.png",
       width: flow.width,
@@ -66,7 +69,6 @@ export async function saveFlowZip(flow: Flow): Promise<File> {
     const configBlob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" })
     const filesToZip: Record<string, Blob> = {
       [config.originalImage]: flow.originalImage,
-      [config.originalDepthMap]: flow.originalDepthMap,
       [config.bottomImage]: flow.bottomImage,
       [config.layerMap]: flow.layerMap,
       [configFileName]: configBlob,

@@ -82,7 +82,9 @@ export async function createFlowSimpleRenderer(
   const depthBoundsHierarchy = createDepthBoundsHierarchy(originalDepthMapData)
 
   const imageTexture = createTexture(originalImage)
-  const depthMapTexture = createTexture(originalDepthMap)
+  // Depth is numeric data, so upload decoded pixels just like the SLIDE layer
+  // map instead of allowing image-element color conversion during upload.
+  const depthMapTexture = createTexture(originalDepthMapData)
   const blurMipmapTexture = createTexture(blurMipmap)
   const depthBoundsTexture = createDepthBoundsTexture(gl, depthBoundsHierarchy)
 

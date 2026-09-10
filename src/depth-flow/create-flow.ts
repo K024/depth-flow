@@ -3,7 +3,6 @@ import { saveFlowZip } from "./flow-file"
 import { consoleLogImageData } from "./image/console"
 import {
   circularDilateGrayscale,
-  dilateImageData,
   gaussianBlurImageData,
   getImageData,
   loadImageFromBlob,
@@ -87,7 +86,9 @@ async function simpleProcess(image: Blob, args: Required<SimpleFlowArgs>, progre
 
   const scaledBackDepthMap = await scaleImageData(depthMap, imageData.width, imageData.height)
   const dilatedDepthMap = args.depthMapDilateRadius > 0
-    ? await dilateImageData(scaledBackDepthMap, args.depthMapDilateRadius)
+    // Match SLIDE's grayscale circular max-pool: unlike the legacy square
+    // filter, it expands curved and diagonal silhouettes isotropically.
+    ? circularDilateGrayscale(scaledBackDepthMap, args.depthMapDilateRadius)
     : scaledBackDepthMap
 
   if (args.depthMapDilateRadius > 0) {
@@ -163,9 +164,14 @@ export async function createSlideFlow(
   progress?.("Computing SLIDE soft layering")
   await frame()
 
-  // Keep all layering analysis on the depth model's native grid. D_pool is
-  // used for disocclusion; its blurred form D_top drives both rendered Top
-  // geometry and visibility so their transition bands stay aligned.
+  // Keep all layering analysis on the depth model's native grid; downsampling
+  // it again made the visibility contours visibly stair-step after upscaling.
+  //
+  // D_pool protects foreground silhouettes and is the geometry used by the
+  // SLIDE Eq. 5 disocclusion scan. D_top = Gaussian(D_pool) drives both rendered
+  // Top geometry and visibility so their transition bands stay aligned. The raw
+  // depthMap is passed separately as the argmin value source: pooling is right
+  // for conservative geometry but would bias far/background values toward Top.
   const pooledDepthMap = circularDilateGrayscale(depthMap, normalizedArgs.poolRadius)
   const nativeTopDepthMap = gaussianBlurImageData(
     pooledDepthMap,
@@ -198,6 +204,10 @@ export async function createSlideFlow(
     rawTopVisibility,
     repairMasks.fullResolutionBlendMask,
   )
+  // Recompute both visibility ratios from the final, aligned full-resolution
+  // map. Mixing native-grid and final-grid diagnostics made the table look
+  // internally comparable when it was not. opaqueVisibilityRatio also predicts
+  // the shader's single-ray fast-path rate (accepted target >= 0.85).
   let lowVisibilityPixels = 0
   let opaquePixels = 0
   for (let i = 0; i < topVisibility.data.length; i += 4) {
@@ -307,13 +317,17 @@ export async function createSlideFlow(
   progress?.("Making SLIDE flow file")
   await frame()
 
+  // layer-map R is the rendered Top depth and is directly compatible with the
+  // Simple shader's red-channel depth lookup. Reuse this packed image for
+  // originalDepthMap instead of storing a redundant raw-depth PNG.
+  const layerMapBlob = await saveImageData(layerMap, "image/png")
   const flow: FlowSlide = {
     type: "slide",
     version: 1,
     originalImage: image,
-    originalDepthMap: await saveImageData(scaledBackDepthMap, "image/png"),
+    originalDepthMap: layerMapBlob,
     bottomImage: await saveImageData(bottomImage, "image/png"),
-    layerMap: await saveImageData(layerMap, "image/png"),
+    layerMap: layerMapBlob,
     width: imageData.width,
     height: imageData.height,
     processedBy: "depth-flow-web/slide/v3",

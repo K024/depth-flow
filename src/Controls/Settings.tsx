@@ -68,49 +68,49 @@ function SlideFlowSettings() {
       label="Depth Pool Radius"
       signal={slidePoolRadius}
       min={0} max={8} step={1}
-      description="Circular max-pool radius in native depth-model pixels."
+      description="Expands near-depth silhouettes with a circular max-pool, measured in native depth-model pixels. Increase it to protect object edges from stretching, but expect thicker foreground halos and a larger repair area; decrease it for tighter geometry, with more risk of edge tearing."
     />
     <RangeFieldset
       label="Depth Blur Sigma"
       signal={slideBlurSigma}
       min={0} max={6} step={0.25}
-      description="Gaussian sigma in native depth pixels; directly controls transparency-band width."
+      description="Sets the Gaussian smoothing width in native depth pixels. Increase it for a wider, softer transparency transition with less stair-stepping; decrease it for a narrower, sharper edge. It should not materially change Bottom depth-repair statistics."
     />
     <RangeFieldset
       label="Visibility Step Beta"
       signal={slideBetaStep}
       min={5} max={300} step={5}
-      description="Controls which normalized disparity step heights become transparent."
+      description="Sets how strongly a normalized depth step reduces Top visibility. Increase it to make smaller depth edges more transparent and reveal more Bottom; decrease it to keep more edges opaque. Unlike Blur Sigma, it mainly changes opacity, not band width."
     />
     <RangeFieldset
       label="Disocclusion Rho"
       signal={slideDisocclusionRho}
       min={3} max={24} step={0.25}
-      description="Controls disocclusion width; larger values produce narrower repair bands."
+      description="Sets how far a depth edge can expose background when the camera moves. Increase it for narrower repair bands and faster/smaller inpainting; decrease it for wider coverage of stronger camera motion, at the cost of modifying more pixels."
     />
     <RangeFieldset
       label="Disocclusion Gamma"
       signal={slideDisocclusionGamma}
       min={5} max={100} step={1}
-      description="Controls soft disocclusion response steepness."
+      description="Controls how quickly the soft disocclusion score changes from black to white. Increase it for a steeper, more decisive mask and more feather weight near weak edges; decrease it for a gentler response. Together with Repair Threshold, it changes which weak depth steps enter the repair mask."
     />
     <RangeFieldset
       label="Repair Threshold"
       signal={slideRepairThreshold}
       min={0.05} max={0.95} step={0.05}
-      description="Converts soft disocclusion into binary LaMa repair mask."
+      description="Cuts the soft disocclusion map into the binary area sent to LaMa. Increase it to ignore weaker edges and shrink the repair area; decrease it to include weaker edges and grow the repair area, which may improve coverage but costs more and can overwrite valid content."
     />
     <RangeFieldset
       label="Repair Dilate Radius"
       signal={slideRepairDilateRadius}
       min={0} max={16} step={1}
-      description="Circular safety dilation in native depth-model pixels."
+      description="Adds a circular safety margin around the repair mask, measured in native depth-model pixels. Increase it to cover edge uncertainty and avoid leftover foreground pixels; decrease it to preserve more original image and reduce inpainting work."
     />
     <RangeFieldset
       label="Bottom Depth Epsilon"
       signal={slideBottomDepthEpsilon}
       min={0} max={0.1} step={0.005}
-      description="Minimum normalized disparity gap placing Bottom behind Top."
+      description="Keeps repaired Bottom geometry at least this normalized-disparity distance behind Top. Increase it to enforce stronger layer separation and reduce overlap, but too much can push background unnaturally far back; decrease it for closer layers, with more risk of z-fighting or foreground-following artifacts."
     />
   </>
 }
@@ -124,7 +124,7 @@ function SimpleFlowSettings() {
       label="Depth Map Dilate Radius"
       signal={depthMapDilateRadius}
       min={0} max={20} step={1}
-      description="Moves the depth edge outward to keep the border at the same depth with the object."
+      description="Expands near-depth regions before Simple Flow rendering. Increase it to keep object borders attached and reduce edge stretching, but expect thicker halos; decrease it for tighter depth edges, with more risk of cracks during camera motion."
     />
   </>
 }

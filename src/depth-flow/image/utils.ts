@@ -180,6 +180,10 @@ export function circularDilateGrayscale(imageData: ImageData, radius: number) {
 
   // A disk is the union of horizontal intervals. For each vertical offset,
   // compute an exact sliding-window maximum and merge it into the output.
+  // The circular element avoids the axis-aligned contour steps produced by a
+  // separable square max filter. This function is intentionally grayscale:
+  // depth and masks share one value across RGB, and processing one channel is
+  // substantially cheaper than the legacy four-channel morphology.
   for (let dy = -radius; dy <= radius; dy++) {
     const horizontalRadius = Math.floor(Math.sqrt(radius * radius - dy * dy))
     for (let y = 0; y < height; y++) {

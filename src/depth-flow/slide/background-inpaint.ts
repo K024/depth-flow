@@ -56,6 +56,9 @@ export async function createRepairMasks(
 ): Promise<RepairMasks> {
   // Upsample the soft map first. Thresholding a nearest-neighbor binary mask
   // would preserve the native-grid staircase at the final image resolution.
+  // With S=tanh(gamma*score), this threshold is equivalent to accepting
+  // score > atanh(repairThreshold)/gamma; rho, not this threshold, remains the
+  // primary geometric control of repair-band width.
   const fullResolutionSoftMask = await scaleImageData(
     softDisocclusion,
     outputWidth,
@@ -72,7 +75,9 @@ export async function createRepairMasks(
     : fullThresholded.image
   const fullResolutionBlendMask = gaussianBlurImageData(fullResolutionRepairMask, 2.5, true)
   // Feather inward only. Outside the repair mask Bottom must remain exactly
-  // identical to Top/source, so harmless transparency cannot reveal altered RGB.
+  // identical to source RGB; preserving zero outside-mask RGB change is a hard
+  // acceptance invariant. Depth intentionally does NOT use this feather as a
+  // lerp: blending Bottom back toward Top recreated an epsilon-hugging rim.
   for (let i = 0; i < fullResolutionBlendMask.data.length; i += 4) {
     if (fullResolutionRepairMask.data[i] >= 128)
       continue
@@ -130,6 +135,12 @@ export function alignVisibilityToRepairMask(
   const output = cloneImageData(visibility)
   for (let i = 0; i < output.data.length; i += 4) {
     const blend = blendMask.data[i] / 255
+    // A' = 255 - (255-A)*blend. Outside the repair region, Bottom RGB is the
+    // original image and Bottom depth is paired to the unpooled source depth,
+    // so a second ray cannot add useful color. Forcing A=255 there preserves
+    // appearance while raising opaqueVisibilityRatio (target >= 0.85), which
+    // directly increases the shader's one-ray fast-path hit rate. Reusing the
+    // feathered mask avoids a hard visibility ring at the boundary.
     const value = 255 - (255 - visibility.data[i]) * blend
     output.data[i] = value
     output.data[i + 1] = value
