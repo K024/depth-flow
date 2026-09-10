@@ -2,7 +2,12 @@ import { getCachedFile } from "./file-cache"
 import { saveFlowZip } from "./flow-file"
 import { consoleLogImageData } from "./image/console"
 import {
+  normalizeDepthMap,
+  type DepthMapNormalization,
+} from "./image/depth-map"
+import {
   circularDilateGrayscale,
+  cloneImageData,
   gaussianBlurImageData,
   getImageData,
   loadImageFromBlob,
@@ -61,17 +66,61 @@ export interface SimpleFlowArgs {
   depthMapDilateRadius?: number
 }
 
-async function simpleProcess(image: Blob, args: Required<SimpleFlowArgs>, progress?: ProgressReporter) {
-  progress?.("Loading depth model")
-  await frame()
-
-  const depthModelSession = await cachedDepthModelSession()
-
+async function simpleProcess(
+  image: Blob,
+  args: Required<SimpleFlowArgs>,
+  progress?: ProgressReporter,
+  suppliedDepthMap?: Blob,
+) {
   progress?.("Loading image")
   await frame()
 
   const imageElement = await loadImageFromBlob(image)
   const imageData = getImageData(imageElement)
+
+  if (suppliedDepthMap) {
+    progress?.("Loading supplied depth map")
+    await frame()
+
+    const depthMapElement = await loadImageFromBlob(suppliedDepthMap)
+    const suppliedDepthMapData = getImageData(depthMapElement)
+    if (
+      suppliedDepthMapData.width !== imageData.width
+      || suppliedDepthMapData.height !== imageData.height
+    ) {
+      throw new Error(
+        `Depth map must match image size (${imageData.width}×${imageData.height}); `
+        + `received ${suppliedDepthMapData.width}×${suppliedDepthMapData.height}`,
+      )
+    }
+
+    progress?.("Preparing supplied depth map")
+    await frame()
+
+    const { image: normalizedDepthMap, normalization } = normalizeDepthMap(suppliedDepthMapData)
+    // Keep SLIDE analysis on same compact grid used for model-generated maps.
+    // Simple Flow uses scaledBackDepthMap, while SLIDE uses depthMap for its
+    // native-grid masks and scaledBackDepthMap for final full-size output.
+    const analysisDepthMap = await resizeImageForDepthModel(normalizedDepthMap)
+    const dilatedDepthMap = args.depthMapDilateRadius > 0
+      ? circularDilateGrayscale(normalizedDepthMap, args.depthMapDilateRadius)
+      : cloneImageData(normalizedDepthMap)
+
+    console.log("supplied depth map normalization", normalization)
+    return {
+      imageData,
+      depthMap: analysisDepthMap,
+      scaledBackDepthMap: normalizedDepthMap,
+      dilatedDepthMap,
+      depthMapNormalization: normalization,
+    }
+  }
+
+  progress?.("Loading depth model")
+  await frame()
+
+  const depthModelSession = await cachedDepthModelSession()
+
   const scaledImageData = await resizeImageForDepthModel(imageData)
 
   progress?.("Running depth model")
@@ -101,10 +150,16 @@ async function simpleProcess(image: Blob, args: Required<SimpleFlowArgs>, progre
     depthMap,
     scaledBackDepthMap,
     dilatedDepthMap,
+    depthMapNormalization: undefined,
   }
 }
 
-export async function createSimpleFlow(image: Blob, args?: SimpleFlowArgs, progress?: ProgressReporter) {
+export async function createSimpleFlow(
+  image: Blob,
+  args?: SimpleFlowArgs,
+  progress?: ProgressReporter,
+  suppliedDepthMap?: Blob,
+) {
 
   const normalizedArgs: Required<SimpleFlowArgs> = {
     depthMapDilateRadius: clip(args?.depthMapDilateRadius ?? 4, 0, 20),
@@ -113,7 +168,8 @@ export async function createSimpleFlow(image: Blob, args?: SimpleFlowArgs, progr
   const {
     imageData,
     dilatedDepthMap,
-  } = await simpleProcess(image, normalizedArgs, progress)
+    depthMapNormalization,
+  } = await simpleProcess(image, normalizedArgs, progress, suppliedDepthMap)
   const depthMapBlob = await saveImageData(dilatedDepthMap, "image/png")
 
   progress?.("Making flow file")
@@ -127,8 +183,14 @@ export async function createSimpleFlow(image: Blob, args?: SimpleFlowArgs, progr
     width: imageData.width,
     height: imageData.height,
 
-    processedBy: "depth-flow-web/simple/v0",
-    processArgs: normalizedArgs,
+    processedBy: suppliedDepthMap
+      ? "depth-flow-web/simple/custom-depth/v1"
+      : "depth-flow-web/simple/v0",
+    processArgs: {
+      ...normalizedArgs,
+      depthMapSource: suppliedDepthMap ? "supplied" : "depth-anything-v2",
+      ...(depthMapNormalization && { depthMapNormalization }),
+    },
   }
   const flowBlob = await saveFlowZip(flow)
 
@@ -143,6 +205,7 @@ export async function createSlideFlow(
   image: Blob,
   args: SlideFlowArgs,
   progress?: ProgressReporter,
+  suppliedDepthMap?: Blob,
 ) {
   const normalizedArgs: SlideFlowArgs = {
     poolRadius: clip(args.poolRadius, 0, 8),
@@ -155,10 +218,16 @@ export async function createSlideFlow(
     bottomDepthEpsilon: clip(args.bottomDepthEpsilon, 0, 0.25, false),
   }
 
-  const { imageData, depthMap, scaledBackDepthMap } = await simpleProcess(
+  const {
+    imageData,
+    depthMap,
+    scaledBackDepthMap,
+    depthMapNormalization,
+  } = await simpleProcess(
     image,
     { depthMapDilateRadius: 0 },
     progress,
+    suppliedDepthMap,
   )
 
   progress?.("Computing SLIDE soft layering")
@@ -330,8 +399,14 @@ export async function createSlideFlow(
     layerMap: layerMapBlob,
     width: imageData.width,
     height: imageData.height,
-    processedBy: "depth-flow-web/slide/v3",
-    processArgs: normalizedArgs,
+    processedBy: suppliedDepthMap
+      ? "depth-flow-web/slide/custom-depth/v1"
+      : "depth-flow-web/slide/v3",
+    processArgs: {
+      ...normalizedArgs,
+      depthMapSource: suppliedDepthMap ? "supplied" : "depth-anything-v2",
+      ...(depthMapNormalization && { depthMapNormalization }),
+    },
   }
 
   return saveFlowZip(flow)

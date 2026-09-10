@@ -23,6 +23,9 @@ import { createRenderer } from "./Flow"
 
 
 const createFlowModule = lazy(() => import("../depth-flow/create-flow"))
+const imageAccept = {
+  "image/*": [".png", ".jpg", ".jpeg", ".webp"],
+}
 
 
 // model cache state
@@ -48,6 +51,8 @@ const {
 // create flow state
 
 const selectedImage = signal<File | null>(null)
+const selectedDepthMap = signal<File | null>(null)
+const selectionError = signal<string>()
 
 const createProgress = signal<[string, number | undefined]>()
 
@@ -57,14 +62,15 @@ const {
   loading: creatingFlow,
   error: createError,
   reset: resetCreate,
-} = asyncState(async (file: File) => {
+} = asyncState(async (file: File, depthMap?: File) => {
   const { createSimpleFlow } = await createFlowModule()
   const flowFile = await createSimpleFlow(
     file,
     {
       depthMapDilateRadius: depthMapDilateRadius.value,
     },
-    (message, p) => createProgress.value = [message, p]
+    (message, p) => createProgress.value = [message, p],
+    depthMap,
   )
   createRenderer(flowFile)
   return flowFile
@@ -76,7 +82,7 @@ const {
   loading: creatingSlideFlow,
   error: createSlideError,
   reset: resetCreateSlide,
-} = asyncState(async (file: File) => {
+} = asyncState(async (file: File, depthMap?: File) => {
   const { createSlideFlow } = await createFlowModule()
   const flowFile = await createSlideFlow(
     file,
@@ -91,6 +97,7 @@ const {
       bottomDepthEpsilon: slideBottomDepthEpsilon.value,
     },
     (message, p) => createProgress.value = [message, p],
+    depthMap,
   )
   createRenderer(flowFile)
   return flowFile
@@ -101,6 +108,63 @@ const reset = () => {
   resetCreateSlide()
   createProgress.value = undefined
   selectedImage.value = null
+  selectedDepthMap.value = null
+  selectionError.value = undefined
+}
+
+async function imageSize(file: Blob) {
+  const image = await createImageBitmap(file)
+  try {
+    return { width: image.width, height: image.height }
+  } finally {
+    image.close()
+  }
+}
+
+function hasDepthName(file: File) {
+  return /(?:^|[\s._-])(depth|depthmap|depth-map|disparity)(?:[\s._-]|$)/i.test(file.name)
+}
+
+async function selectSourceFiles(files: File[]) {
+  selectionError.value = undefined
+
+  if (files.length === 1) {
+    selectedImage.value = files[0]
+    selectedDepthMap.value = null
+    setBackground(files[0])
+    setRenderer(undefined)
+    return
+  }
+
+  if (files.length !== 2) {
+    selectionError.value = "Select one source image, or exactly two images: one source and one depth map."
+    return
+  }
+
+  const depthNamedFiles = files.filter(hasDepthName)
+  if (depthNamedFiles.length !== 1) {
+    selectionError.value = "Could not identify depth map. Name it with “depth” or “disparity”, or select source image first and add depth map below."
+    return
+  }
+
+  const depthMap = depthNamedFiles[0]
+  const image = files.find(file => file !== depthMap)!
+  const [imageDimensions, depthDimensions] = await Promise.all([
+    imageSize(image),
+    imageSize(depthMap),
+  ])
+  if (
+    imageDimensions.width !== depthDimensions.width
+    || imageDimensions.height !== depthDimensions.height
+  ) {
+    selectionError.value = `Source and depth map must have same size. Source: ${imageDimensions.width}×${imageDimensions.height}; depth: ${depthDimensions.width}×${depthDimensions.height}.`
+    return
+  }
+
+  selectedImage.value = image
+  selectedDepthMap.value = depthMap
+  setBackground(image)
+  setRenderer(undefined)
 }
 
 
@@ -155,7 +219,7 @@ function Download() {
 
 
 
-function CreateFlow() {
+function CreateFlow({ modelsCached }: { modelsCached: boolean | undefined }) {
   const flow = flowFile.useValue()
   const error = createError.useValue()
   const slideError = createSlideError.useValue()
@@ -164,17 +228,41 @@ function CreateFlow() {
   const slideFlow = slideFlowFile.useValue()
   const progress = createProgress.useValue()
   const image = selectedImage.useValue()
+  const depthMap = selectedDepthMap.useValue()
+  const fileSelectionError = selectionError.useValue()
 
   const { getRootProps, getInputProps, isDragAccept, isDragReject } = useDropzone({
-    accept: {
-      "image/*": [".png", ".jpg", ".jpeg", ".webp"],
-    },
+    accept: imageAccept,
+    maxFiles: 2,
     onDrop: (files) => {
-      if (!files.length)
+      selectSourceFiles(files).catch((error) => {
+        selectionError.value = error instanceof Error ? error.message : "Failed to read selected images."
+      })
+    },
+  })
+  const depthDropzone = useDropzone({
+    accept: imageAccept,
+    maxFiles: 1,
+    onDrop: async (files) => {
+      if (!files.length || !image)
         return
-      selectedImage.value = files[0]
-      setBackground(files[0])
-      setRenderer(undefined)
+      try {
+        const [imageDimensions, depthDimensions] = await Promise.all([
+          imageSize(image),
+          imageSize(files[0]),
+        ])
+        if (
+          imageDimensions.width !== depthDimensions.width
+          || imageDimensions.height !== depthDimensions.height
+        ) {
+          selectionError.value = `Depth map must match source size (${imageDimensions.width}×${imageDimensions.height}); received ${depthDimensions.width}×${depthDimensions.height}.`
+          return
+        }
+        selectionError.value = undefined
+        selectedDepthMap.value = files[0]
+      } catch (error) {
+        selectionError.value = error instanceof Error ? error.message : "Failed to read depth map."
+      }
     },
   })
 
@@ -250,24 +338,77 @@ function CreateFlow() {
   if (image) {
     return <>
       <div className="alert alert-soft alert-primary text-center break-all">
-        {image.name} ({humanSize(image.size)})
+        Source: {image.name} ({humanSize(image.size)})
       </div>
-      <div
-        className="btn btn-soft btn-primary w-full"
-        onClick={() => {
-          createDepthFlow(image)
-        }}
-      >
-        Create Simple Flow
-      </div>
-      <div
-        className="btn btn-soft btn-accent w-full"
-        onClick={() => {
-          createSlideFlow(image)
-        }}
-      >
-        Create SLIDE Flow
-      </div>
+      {depthMap ? (
+        <div className="alert alert-soft alert-success text-center break-all">
+          Supplied depth map: {depthMap.name} ({humanSize(depthMap.size)})
+        </div>
+      ) : (
+        <div
+          className={clsx(
+            "btn btn-dash btn-secondary w-full min-h-24 h-auto whitespace-normal",
+            depthDropzone.isDragAccept && "bg-secondary/20",
+            depthDropzone.isDragReject && "bg-error/20",
+          )}
+          {...depthDropzone.getRootProps()}
+        >
+          Upload matching depth map (optional)
+          <input className="hidden" {...depthDropzone.getInputProps()} />
+        </div>
+      )}
+      {fileSelectionError && (
+        <div className="alert alert-soft alert-error">{fileSelectionError}</div>
+      )}
+      {depthMap && <>
+        <div className="text-sm opacity-70">
+          Uses supplied map. Depth Anything model is skipped. Low-contrast maps are normalized only when their 1%–99% range is under 80% of 0–255.
+        </div>
+        <div
+          className="btn btn-soft btn-primary w-full"
+          onClick={() => {
+            createDepthFlow(image, depthMap)
+          }}
+        >
+          Create Simple Flow with Supplied Depth
+        </div>
+        <div
+          className="btn btn-soft btn-accent w-full"
+          onClick={() => {
+            createSlideFlow(image, depthMap)
+          }}
+        >
+          Create SLIDE Flow with Supplied Depth
+        </div>
+        <div
+          className="btn btn-soft btn-secondary w-full"
+          onClick={() => {
+            selectedDepthMap.value = null
+            selectionError.value = undefined
+          }}
+        >
+          Remove Supplied Depth Map
+        </div>
+      </>}
+      {!depthMap && modelsCached === true && <>
+        <div
+          className="btn btn-soft btn-primary w-full"
+          onClick={() => {
+            createDepthFlow(image)
+          }}
+        >
+          Create Simple Flow
+        </div>
+        <div
+          className="btn btn-soft btn-accent w-full"
+          onClick={() => {
+            createSlideFlow(image)
+          }}
+        >
+          Create SLIDE Flow
+        </div>
+      </>}
+      {!depthMap && modelsCached === false && <Download />}
       <div
         className="btn btn-soft btn-secondary w-full"
         onClick={reset}
@@ -286,14 +427,17 @@ function CreateFlow() {
       )}
       {...getRootProps()}
     >
-      Drop or select an image
+      Drop source image, or source + named depth map
       <input
         className="hidden"
         {...getInputProps()}
       />
     </div>
+    {fileSelectionError && (
+      <div className="alert alert-soft alert-error">{fileSelectionError}</div>
+    )}
     <div className="hidden md:block text-sm opacity-70">
-      Suggest 1080P images
+      Two-file auto-pairing requires equal dimensions and exactly one filename containing “depth” or “disparity”.
     </div>
     <div className="md:hidden text-secondary text-sm opacity-70">
       Running AI models on mobile devices is strongly discouraged. Try on desktop instead.
@@ -317,8 +461,7 @@ export function Create() {
       animate={{ filter: "blur(0px)", opacity: 1 }}
       exit={{ filter: "blur(4px)", opacity: 0, z: -1 }}
     >
-      {modelsCached === false && <Download />}
-      {modelsCached === true && <CreateFlow />}
+      <CreateFlow modelsCached={modelsCached} />
     </motion.div>
   )
 }
