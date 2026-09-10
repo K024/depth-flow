@@ -37,11 +37,29 @@ function ensureMultipleOf(x: number, n: number) {
 }
 
 
+// Every length-like SLIDE parameter (pool radius, blur sigma, repair dilate
+// radius) was tuned on the grid resizeImageForDepthModel produces, whose short
+// edge is this constant. Exporting it turns what used to be an unwritten
+// assumption into a stated reference, so the pipeline can rescale those
+// parameters if the grid ever changes instead of silently changing meaning.
+export const analysisReferenceShortEdge = 518
+const analysisMultipleOf = 14
+
+
+/**
+ * How much wider the actual analysis grid is than the reference grid the
+ * parameters were tuned on. 1 for the current pipeline.
+ */
+export function analysisGridScale(grid: { width: number, height: number }) {
+  return Math.min(grid.width, grid.height) / analysisReferenceShortEdge
+}
+
+
 export async function resizeImageForDepthModel(imageData: ImageData) {
 
   // scale the shorter edge to 518 
-  const desiredSize = 518
-  const multipleOf = 14
+  const desiredSize = analysisReferenceShortEdge
+  const multipleOf = analysisMultipleOf
 
   const width = imageData.width
   const height = imageData.height

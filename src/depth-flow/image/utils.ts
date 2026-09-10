@@ -167,8 +167,14 @@ export async function dilateImageData(imageData: ImageData, radius: number, filt
 
 
 export function circularDilateGrayscale(imageData: ImageData, radius: number) {
-  radius = Math.round(radius)
-  if (radius <= 0)
+  // Fractional radii are meaningful and are kept. The structuring element is
+  // the set of lattice points with x^2 + y^2 <= radius^2, which grows in real
+  // steps between integers: 5, 9, 13, 21, 29 pixels for radius 1, 1.5, 2, 2.5,
+  // 3. Rounding to an integer threw that resolution away, which matters now
+  // that callers rescale radii by a non-integer analysis-grid factor and would
+  // otherwise get the same element for a whole band of inputs. Below 1 the
+  // element is the center pixel alone, i.e. the identity.
+  if (!(radius >= 1))
     return cloneImageData(imageData)
 
   const { data, width, height } = imageData
@@ -177,6 +183,7 @@ export function circularDilateGrayscale(imageData: ImageData, radius: number) {
   const rowValues = new Uint8ClampedArray(width)
   const filteredRow = new Uint8ClampedArray(width)
   const deque = new Int32Array(width)
+  const verticalRadius = Math.floor(radius)
 
   // A disk is the union of horizontal intervals. For each vertical offset,
   // compute an exact sliding-window maximum and merge it into the output.
@@ -184,7 +191,7 @@ export function circularDilateGrayscale(imageData: ImageData, radius: number) {
   // separable square max filter. This function is intentionally grayscale:
   // depth and masks share one value across RGB, and processing one channel is
   // substantially cheaper than the legacy four-channel morphology.
-  for (let dy = -radius; dy <= radius; dy++) {
+  for (let dy = -verticalRadius; dy <= verticalRadius; dy++) {
     const horizontalRadius = Math.floor(Math.sqrt(radius * radius - dy * dy))
     for (let y = 0; y < height; y++) {
       const sourceY = y + dy

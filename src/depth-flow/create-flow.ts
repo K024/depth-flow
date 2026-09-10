@@ -15,7 +15,12 @@ import {
   scaleImageData,
 } from "./image/utils"
 import { depthModelUrl, inpaintModelUrl } from "./models/cache"
-import { getDepthModelSession, inferDepthModelSession, resizeImageForDepthModel } from "./models/depth"
+import {
+  analysisGridScale,
+  getDepthModelSession,
+  inferDepthModelSession,
+  resizeImageForDepthModel,
+} from "./models/depth"
 import {
   getInpaintModelSession,
   inferInpaintSession,
@@ -102,7 +107,7 @@ async function simpleProcess(
     // Simple Flow uses scaledBackDepthMap, while SLIDE uses depthMap for its
     // native-grid masks and scaledBackDepthMap for final full-size output.
     const analysisDepthMap = await resizeImageForDepthModel(normalizedDepthMap)
-    const dilatedDepthMap = args.depthMapDilateRadius > 0
+    const dilatedDepthMap = args.depthMapDilateRadius >= 1
       ? circularDilateGrayscale(normalizedDepthMap, args.depthMapDilateRadius)
       : cloneImageData(normalizedDepthMap)
 
@@ -134,13 +139,13 @@ async function simpleProcess(
   await frame()
 
   const scaledBackDepthMap = await scaleImageData(depthMap, imageData.width, imageData.height)
-  const dilatedDepthMap = args.depthMapDilateRadius > 0
+  const dilatedDepthMap = args.depthMapDilateRadius >= 1
     // Match SLIDE's grayscale circular max-pool: unlike the legacy square
     // filter, it expands curved and diagonal silhouettes isotropically.
     ? circularDilateGrayscale(scaledBackDepthMap, args.depthMapDilateRadius)
     : scaledBackDepthMap
 
-  if (args.depthMapDilateRadius > 0) {
+  if (args.depthMapDilateRadius >= 1) {
     console.log(`dilatedDepthMap`)
     await consoleLogImageData(dilatedDepthMap)
   }
@@ -162,7 +167,7 @@ export async function createSimpleFlow(
 ) {
 
   const normalizedArgs: Required<SimpleFlowArgs> = {
-    depthMapDilateRadius: clip(args?.depthMapDilateRadius ?? 4, 0, 20),
+    depthMapDilateRadius: clip(args?.depthMapDilateRadius ?? 4, 0, 20, false),
   }
 
   const {
@@ -198,6 +203,8 @@ export async function createSimpleFlow(
 }
 
 export interface SlideFlowArgs extends SoftLayeringArgs, RepairMaskArgs, BottomDepthRepairArgs {
+  // Reference pixels on the analysisReferenceShortEdge grid, like blurSigma and
+  // repairDilateRadius. See analysisGridScale.
   poolRadius: number
 }
 
@@ -207,15 +214,32 @@ export async function createSlideFlow(
   progress?: ProgressReporter,
   suppliedDepthMap?: Blob,
 ) {
+  // E is the recovered disparity step and never exceeds ~0.30 on real depth
+  // maps (measured: 0.30 on a depth-anything-v2 map, 0.19 on a supplied one).
+  // A cutoff above that makes A == 0 unreachable, and a knee above ~0.06 is
+  // already past the p99 of the gradient distribution, so both ranges are
+  // clamped to the region that actually does something.
+  const visibilityKnee = clip(args.visibilityKnee, 0.005, 0.06, false)
   const normalizedArgs: SlideFlowArgs = {
-    poolRadius: clip(args.poolRadius, 0, 8),
+    poolRadius: clip(args.poolRadius, 0, 8, false),
     blurSigma: clip(args.blurSigma, 0, 6, false),
-    betaStep: clip(args.betaStep, 5, 300, false),
+    visibilityKnee,
+    // The cutoff must stay above the knee or the smoothstep span collapses.
+    visibilityCutoff: clip(
+      Math.max(args.visibilityCutoff, visibilityKnee * 1.5),
+      0.02,
+      0.30,
+      false,
+    ),
     disocclusionRho: clip(args.disocclusionRho, 3, 24, false),
-    disocclusionGamma: clip(args.disocclusionGamma, 5, 100, false),
-    repairThreshold: clip(args.repairThreshold, 0, 1, false),
-    repairDilateRadius: clip(args.repairDilateRadius, 0, 16),
-    bottomDepthEpsilon: clip(args.bottomDepthEpsilon, 0, 0.25, false),
+    // Below ~0.004 the mask grows explosively into depth-map noise; above ~0.06
+    // rho has already taken over as the control that matters. Measured on a
+    // 518 grid at rho 11: 0.004 -> 5.5% of the frame, 0.06 -> 2.9%.
+    repairScoreThreshold: clip(args.repairScoreThreshold, 0.004, 0.06, false),
+    // Past ~8 the dilation ring is most of the mask (67% at 8, 80% at 16),
+    // which starves soft-layering's farReference of a far Dirichlet value.
+    repairDilateRadius: clip(args.repairDilateRadius, 0, 8, false),
+    bottomDepthEpsilon: clip(args.bottomDepthEpsilon, 0, 0.1, false),
   }
 
   const {
@@ -233,6 +257,24 @@ export async function createSlideFlow(
   progress?.("Computing SLIDE soft layering")
   await frame()
 
+  // poolRadius and blurSigma are quoted in reference-grid pixels and have to be
+  // carried to whatever grid simpleProcess actually produced. This is what
+  // keeps E — and therefore visibilityKnee — meaningful: |grad D| falls as 1/N
+  // while W_eff = sqrt(2*pi*(sigma^2 + 0.45)) grows with sigma, so the product
+  // only holds still if sigma tracks the grid. Measured across a 4x grid range,
+  // scaling cuts the drift of the partially transparent band from 4.25x to
+  // 1.16x; the remainder is Sobel's own fixed 0.45 variance, which cannot
+  // scale. repairDilateRadius is deliberately absent: createRepairMasks already
+  // applies the equivalent factor.
+  const gridScale = analysisGridScale(depthMap)
+  // A reference radius large enough to dilate at 518 must not silently vanish
+  // on a smaller grid, but a sub-1 value the caller chose deliberately is left
+  // alone; circularDilateGrayscale treats it as the identity.
+  const resolvedPoolRadius = normalizedArgs.poolRadius >= 1
+    ? Math.max(1, normalizedArgs.poolRadius * gridScale)
+    : normalizedArgs.poolRadius * gridScale
+  const resolvedBlurSigma = normalizedArgs.blurSigma * gridScale
+
   // Keep all layering analysis on the depth model's native grid; downsampling
   // it again made the visibility contours visibly stair-step after upscaling.
   //
@@ -241,23 +283,24 @@ export async function createSlideFlow(
   // Top geometry and visibility so their transition bands stay aligned. The raw
   // depthMap is passed separately as the argmin value source: pooling is right
   // for conservative geometry but would bias far/background values toward Top.
-  const pooledDepthMap = circularDilateGrayscale(depthMap, normalizedArgs.poolRadius)
+  const pooledDepthMap = circularDilateGrayscale(depthMap, resolvedPoolRadius)
   const nativeTopDepthMap = gaussianBlurImageData(
     pooledDepthMap,
-    normalizedArgs.blurSigma,
+    resolvedBlurSigma,
     true,
   )
   const diagnostics = await createSoftLayeringDiagnostics(
     nativeTopDepthMap,
     pooledDepthMap,
     depthMap,
-    normalizedArgs,
+    { ...normalizedArgs, blurSigma: resolvedBlurSigma },
   )
   const repairMasks = await createRepairMasks(
     diagnostics.softDisocclusion,
     imageData.width,
     imageData.height,
     normalizedArgs,
+    diagnostics.softDisocclusionThreshold,
   )
   const topDepthMap = await scaleImageData(
     nativeTopDepthMap,
@@ -273,21 +316,29 @@ export async function createSlideFlow(
     rawTopVisibility,
     repairMasks.fullResolutionBlendMask,
   )
-  // Recompute both visibility ratios from the final, aligned full-resolution
+  // Recompute the visibility ratios from the final, aligned full-resolution
   // map. Mixing native-grid and final-grid diagnostics made the table look
-  // internally comparable when it was not. opaqueVisibilityRatio also predicts
-  // the shader's single-ray fast-path rate (accepted target >= 0.85).
+  // internally comparable when it was not. The shader takes its single-ray
+  // fast path on A == 255 (accepted target >= 0.85); it also skips the Top
+  // contribution entirely on A == 0, so partialVisibilityRatio — not
+  // 1 - opaqueVisibilityRatio — is what actually costs a second ray search.
   let lowVisibilityPixels = 0
   let opaquePixels = 0
+  let zeroPixels = 0
   for (let i = 0; i < topVisibility.data.length; i += 4) {
     if (topVisibility.data[i] < 128)
       lowVisibilityPixels++
     if (topVisibility.data[i] === 255)
       opaquePixels++
+    if (topVisibility.data[i] === 0)
+      zeroPixels++
   }
   const visibilityPixels = topVisibility.width * topVisibility.height
   diagnostics.stats.lowVisibilityRatio = lowVisibilityPixels / visibilityPixels
   diagnostics.stats.opaqueVisibilityRatio = opaquePixels / visibilityPixels
+  diagnostics.stats.zeroVisibilityRatio = zeroPixels / visibilityPixels
+  diagnostics.stats.partialVisibilityRatio =
+    (visibilityPixels - opaquePixels - zeroPixels) / visibilityPixels
   const images = [
     ["sourceDisparity", diagnostics.sourceDisparity],
     ["gradientMagnitude", diagnostics.gradientMagnitude],
@@ -302,6 +353,14 @@ export async function createSlideFlow(
 
   console.group("SLIDE soft-layering diagnostics")
   console.log("parameters", normalizedArgs)
+  console.log("resolved for analysis grid", {
+    analysisGrid: [depthMap.width, depthMap.height],
+    gridScale,
+    poolRadius: resolvedPoolRadius,
+    blurSigma: resolvedBlurSigma,
+    disocclusionGamma: diagnostics.disocclusionGamma,
+    softDisocclusionThreshold: diagnostics.softDisocclusionThreshold,
+  })
   console.table(diagnostics.stats)
   for (const [name, imageData] of images) {
     console.log(`${name} (${imageData.width}x${imageData.height})`)
@@ -400,11 +459,15 @@ export async function createSlideFlow(
     width: imageData.width,
     height: imageData.height,
     processedBy: suppliedDepthMap
-      ? "depth-flow-web/slide/custom-depth/v1"
-      : "depth-flow-web/slide/v3",
+      ? "depth-flow-web/slide/custom-depth/v2"
+      : "depth-flow-web/slide/v5",
     processArgs: {
       ...normalizedArgs,
       depthMapSource: suppliedDepthMap ? "supplied" : "depth-anything-v2",
+      // Length-like parameters above are reference-grid values. Record the grid
+      // they were resolved against, otherwise diagnostics from two runs are not
+      // comparable and there is no way to tell after the fact.
+      analysisGrid: [depthMap.width, depthMap.height],
       ...(depthMapNormalization && { depthMapNormalization }),
     },
   }

@@ -7,14 +7,14 @@ import { setBackground } from "../Canvas/Background"
 import { setRenderer } from "../Canvas/Renderer"
 import {
   depthMapDilateRadius,
-  slideBetaStep,
   slideBlurSigma,
   slideBottomDepthEpsilon,
-  slideDisocclusionGamma,
   slideDisocclusionRho,
   slidePoolRadius,
   slideRepairDilateRadius,
-  slideRepairThreshold,
+  slideRepairScoreThreshold,
+  slideVisibilityCutoff,
+  slideVisibilityKnee,
 } from "./Settings"
 import { humanSize, asyncState } from "./utils"
 import { checkAllModelsCached, downloadAllModels } from "../depth-flow/models/cache"
@@ -89,10 +89,10 @@ const {
     {
       poolRadius: slidePoolRadius.value,
       blurSigma: slideBlurSigma.value,
-      betaStep: slideBetaStep.value,
+      visibilityKnee: slideVisibilityKnee.value,
+      visibilityCutoff: slideVisibilityCutoff.value,
       disocclusionRho: slideDisocclusionRho.value,
-      disocclusionGamma: slideDisocclusionGamma.value,
-      repairThreshold: slideRepairThreshold.value,
+      repairScoreThreshold: slideRepairScoreThreshold.value,
       repairDilateRadius: slideRepairDilateRadius.value,
       bottomDepthEpsilon: slideBottomDepthEpsilon.value,
     },

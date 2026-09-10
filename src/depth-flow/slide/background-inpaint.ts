@@ -7,7 +7,9 @@ import {
 
 
 export interface RepairMaskArgs {
-  repairThreshold: number
+  // Reference pixels on the analysisReferenceShortEdge grid. Do NOT pre-scale
+  // this by the analysis grid: createRepairMasks already multiplies by
+  // nativeToOutputScale, and the two factors would cancel into a double count.
   repairDilateRadius: number
 }
 
@@ -20,11 +22,14 @@ export interface RepairMasks {
 
 function thresholdImage(image: ImageData, threshold: number) {
   const output = new ImageData(image.width, image.height)
-  const byteThreshold = Math.round(Math.max(0, Math.min(1, threshold)) * 255)
+  // Compare in float. Rounding the threshold to a byte first put the cut on the
+  // wrong side for values that land near a half-LSB: the exact equivalent of
+  // the old (gamma 30, threshold 0.5) pair is tanh(30 * 0.0183102) = 0.499995,
+  // which rounds to byte 127 and silently widened the mask by one level.
   let activePixels = 0
 
   for (let i = 0; i < image.data.length; i += 4) {
-    const value = image.data[i] >= byteThreshold ? 255 : 0
+    const value = image.data[i] / 255 >= threshold ? 255 : 0
     if (value)
       activePixels++
     output.data[i] = value
@@ -53,24 +58,29 @@ export async function createRepairMasks(
   outputWidth: number,
   outputHeight: number,
   args: RepairMaskArgs,
+  softThreshold: number,
 ): Promise<RepairMasks> {
   // Upsample the soft map first. Thresholding a nearest-neighbor binary mask
   // would preserve the native-grid staircase at the final image resolution.
-  // With S=tanh(gamma*score), this threshold is equivalent to accepting
-  // score > atanh(repairThreshold)/gamma; rho, not this threshold, remains the
-  // primary geometric control of repair-band width.
+  // softThreshold comes from resolveDisocclusionShaping, so this cut is exactly
+  // score >= repairScoreThreshold; rho, not this threshold, remains the primary
+  // geometric control of repair-band width.
   const fullResolutionSoftMask = await scaleImageData(
     softDisocclusion,
     outputWidth,
     outputHeight,
   )
-  const fullThresholded = thresholdImage(fullResolutionSoftMask, args.repairThreshold)
+  const fullThresholded = thresholdImage(fullResolutionSoftMask, softThreshold)
+  // repairDilateRadius is in reference-grid pixels and this factor carries it
+  // to output pixels. Because the analysis grid appears in both the numerator
+  // of the tuned value and the denominator here, the composite is a fixed
+  // fraction of the output short edge and does not need a grid-scale term.
   const nativeToOutputScale = Math.max(
     outputWidth / softDisocclusion.width,
     outputHeight / softDisocclusion.height,
   )
-  const outputDilateRadius = Math.round(args.repairDilateRadius * nativeToOutputScale)
-  const fullResolutionRepairMask = outputDilateRadius > 0
+  const outputDilateRadius = args.repairDilateRadius * nativeToOutputScale
+  const fullResolutionRepairMask = outputDilateRadius >= 1
     ? circularDilateGrayscale(fullThresholded.image, outputDilateRadius)
     : fullThresholded.image
   const fullResolutionBlendMask = gaussianBlurImageData(fullResolutionRepairMask, 2.5, true)

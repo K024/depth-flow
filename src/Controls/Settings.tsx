@@ -17,11 +17,14 @@ export const depthMapDilateRadius = signal(4)
 
 export const slidePoolRadius = signal(3)
 export const slideBlurSigma = signal(1.5)
-export const slideBetaStep = signal(30)
+export const slideVisibilityKnee = signal(0.03)
+export const slideVisibilityCutoff = signal(0.08)
 export const slideDisocclusionRho = signal(11)
-export const slideDisocclusionGamma = signal(30)
-export const slideRepairThreshold = signal(0.5)
-export const slideRepairDilateRadius = signal(4)
+// atanh(0.5)/30 = 0.01831 is the exact equivalent of the retired
+// (Disocclusion Gamma 30, Repair Threshold 0.5) pair; 0.018 is the nearest
+// slider step and lands within 0.5% of the same repair ratio.
+export const slideRepairScoreThreshold = signal(0.018)
+export const slideRepairDilateRadius = signal(2)
 export const slideBottomDepthEpsilon = signal(0.01)
 
 
@@ -31,10 +34,10 @@ export const flowSettingsDefaults = Object.freeze({
   depthMapDilateRadius: depthMapDilateRadius.value,
   slidePoolRadius: slidePoolRadius.value,
   slideBlurSigma: slideBlurSigma.value,
-  slideBetaStep: slideBetaStep.value,
+  slideVisibilityKnee: slideVisibilityKnee.value,
+  slideVisibilityCutoff: slideVisibilityCutoff.value,
   slideDisocclusionRho: slideDisocclusionRho.value,
-  slideDisocclusionGamma: slideDisocclusionGamma.value,
-  slideRepairThreshold: slideRepairThreshold.value,
+  slideRepairScoreThreshold: slideRepairScoreThreshold.value,
   slideRepairDilateRadius: slideRepairDilateRadius.value,
   slideBottomDepthEpsilon: slideBottomDepthEpsilon.value,
 })
@@ -102,51 +105,51 @@ function SlideFlowSettings() {
     <RangeFieldset
       label="Depth Pool Radius"
       signal={slidePoolRadius}
-      min={0} max={8} step={1}
+      min={0} max={8} step={0.5}
       defaultValue={flowSettingsDefaults.slidePoolRadius}
-      description="Expands near-depth silhouettes with a circular max-pool, measured in native depth-model pixels. Increase it to protect object edges from stretching, but expect thicker foreground halos and a larger repair area; decrease it for tighter geometry, with more risk of edge tearing."
+      description="Expands near-depth silhouettes with a circular max-pool, measured in reference pixels on the 518-short-edge analysis grid and rescaled if that grid changes. Half steps are real: the lattice disk grows 5, 9, 13, 21 pixels across radius 1, 1.5, 2, 2.5. Increase it to protect object edges from stretching, but expect thicker foreground halos and a larger repair area; decrease it for tighter geometry, with more risk of edge tearing. Below 1 it does nothing."
     />
     <RangeFieldset
       label="Depth Blur Sigma"
       signal={slideBlurSigma}
       min={0} max={6} step={0.25}
       defaultValue={flowSettingsDefaults.slideBlurSigma}
-      description="Sets the Gaussian smoothing width in native depth pixels. Increase it for a wider, softer transparency transition with less stair-stepping; decrease it for a narrower, sharper edge. It should not materially change Bottom depth-repair statistics."
+      description="Sets the Gaussian smoothing width in reference pixels on the 518-short-edge analysis grid. It is rescaled with that grid, which is what keeps Visibility Knee meaning the same thing at any analysis resolution. Increase it for a wider, softer transparency transition with less stair-stepping; decrease it for a narrower, sharper edge. It should not materially change Bottom depth-repair statistics."
     />
     <RangeFieldset
-      label="Visibility Step Beta"
-      signal={slideBetaStep}
-      min={5} max={300} step={5}
-      defaultValue={flowSettingsDefaults.slideBetaStep}
-      description="Sets how strongly a normalized depth step reduces Top visibility. Increase it to make smaller depth edges more transparent and reveal more Bottom; decrease it to keep more edges opaque. Unlike Blur Sigma, it mainly changes opacity, not band width."
+      label="Visibility Knee"
+      signal={slideVisibilityKnee}
+      min={0.005} max={0.06} step={0.0025}
+      defaultValue={flowSettingsDefaults.slideVisibilityKnee}
+      description="Depth steps below this normalized-disparity height keep Top fully opaque. Measured gradients put p90 near 0.015 and p99 near 0.12, so the useful range ends around 0.06. Increase it to ignore more depth-map noise and to shrink the partially transparent band, which is what the renderer pays for; decrease it to start fading Top at weaker edges."
+    />
+    <RangeFieldset
+      label="Visibility Cutoff"
+      signal={slideVisibilityCutoff}
+      min={0.02} max={0.3} step={0.005}
+      defaultValue={flowSettingsDefaults.slideVisibilityCutoff}
+      description="Depth steps at or above this normalized-disparity height make Top fully transparent, so Bottom shows through with no residue. Recovered steps top out near 0.30, so a larger value would never reach full transparency. Decrease it to erase the stretched rubber band on weaker edges; increase it to keep more of the original edge, at the risk of translucent smearing. It only ever applies inside the repair mask, so it cannot punch holes in solid foreground. Must stay above Visibility Knee; the gap between the two is the width of the soft transition."
     />
     <RangeFieldset
       label="Disocclusion Rho"
       signal={slideDisocclusionRho}
       min={3} max={24} step={0.25}
       defaultValue={flowSettingsDefaults.slideDisocclusionRho}
-      description="Sets how far a depth edge can expose background when the camera moves. Increase it for narrower repair bands and faster/smaller inpainting; decrease it for wider coverage of stronger camera motion, at the cost of modifying more pixels."
+      description="Sets how far a depth edge can expose background when the camera moves, as a disparity drop per unit of normalized image axis — the same space the renderer's camera moves in, so it is independent of both image size and analysis resolution. This is the primary control of repair-band width. Increase it for narrower repair bands and faster/smaller inpainting; decrease it for wider coverage of stronger camera motion, at the cost of modifying more pixels."
     />
     <RangeFieldset
-      label="Disocclusion Gamma"
-      signal={slideDisocclusionGamma}
-      min={5} max={100} step={1}
-      defaultValue={flowSettingsDefaults.slideDisocclusionGamma}
-      description="Controls how quickly the soft disocclusion score changes from black to white. Increase it for a steeper, more decisive mask and more feather weight near weak edges; decrease it for a gentler response. Together with Repair Threshold, it changes which weak depth steps enter the repair mask."
-    />
-    <RangeFieldset
-      label="Repair Threshold"
-      signal={slideRepairThreshold}
-      min={0.05} max={0.95} step={0.05}
-      defaultValue={flowSettingsDefaults.slideRepairThreshold}
-      description="Cuts the soft disocclusion map into the binary area sent to LaMa. Increase it to ignore weaker edges and shrink the repair area; decrease it to include weaker edges and grow the repair area, which may improve coverage but costs more and can overwrite valid content."
+      label="Repair Score Threshold"
+      signal={slideRepairScoreThreshold}
+      min={0.004} max={0.06} step={0.001}
+      defaultValue={flowSettingsDefaults.slideRepairScoreThreshold}
+      description="The smallest disparity step that counts as a real disocclusion, in the same normalized units as Visibility Cutoff and Bottom Depth Epsilon. Replaces the old Disocclusion Gamma and Repair Threshold pair, which only ever affected the mask through one combined quantity. Increase it to ignore weaker edges and shrink the repair area; decrease it to include weaker edges, which may improve coverage but costs more and can overwrite valid content. Measured at Rho 11: 0.004 marks 5.5% of the frame for repair, 0.06 marks 2.9%."
     />
     <RangeFieldset
       label="Repair Dilate Radius"
       signal={slideRepairDilateRadius}
-      min={0} max={16} step={1}
+      min={0} max={8} step={0.5}
       defaultValue={flowSettingsDefaults.slideRepairDilateRadius}
-      description="Adds a circular safety margin around the repair mask, measured in native depth-model pixels. Increase it to cover edge uncertainty and avoid leftover foreground pixels; decrease it to preserve more original image and reduce inpainting work."
+      description="Adds a circular safety margin around the repair mask, in reference pixels on the 518-short-edge analysis grid, which works out to a fixed fraction of the output short edge. Half steps are real. Increase it to cover edge uncertainty and avoid leftover foreground pixels; decrease it to preserve more original image and reduce inpainting work. The ring is not free: it is 34% of the mask at 2, 52% at 4 and 68% at 8, and Bottom depth repair loses its far boundary values inside it."
     />
     <RangeFieldset
       label="Bottom Depth Epsilon"
@@ -166,7 +169,7 @@ function SimpleFlowSettings() {
     <RangeFieldset
       label="Depth Map Dilate Radius"
       signal={depthMapDilateRadius}
-      min={0} max={20} step={1}
+      min={0} max={20} step={0.5}
       defaultValue={flowSettingsDefaults.depthMapDilateRadius}
       description="Expands near-depth regions before Simple Flow rendering. Increase it to keep object borders attached and reduce edge stretching, but expect thicker halos; decrease it for tighter depth edges, with more risk of cracks during camera motion."
     />
