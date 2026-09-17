@@ -105,6 +105,19 @@ export function clearLastFlowFileCache() {
   clearCache([flowFileCacheUrl])
 }
 
+export async function downloadLastFlowFile() {
+  const file = await getCachedFile(flowFileCacheUrl)
+  if (!file)
+    return
+
+  const url = URL.createObjectURL(file)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = file instanceof File ? file.name : "last-flow.zip"
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 
 
 const getSharedFlowUrlFromSearchParams = () => {

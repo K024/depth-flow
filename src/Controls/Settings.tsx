@@ -4,7 +4,7 @@ import type { Signal } from "@preact/signals-react"
 import { motion } from "motion/react"
 import { clearCache } from "../depth-flow/file-cache"
 import { clearModelCache } from "../depth-flow/models/cache"
-import { clearLastFlowFileCache, rendererPreset, setRendererPreset } from "./Flow"
+import { clearLastFlowFileCache, downloadLastFlowFile, rendererPreset, setRendererPreset } from "./Flow"
 import { flowSimpleRendererPresets } from "../depth-flow/renderer/simple"
 import type { FlowSimpleRendererPreset } from "../depth-flow/renderer/simple"
 
@@ -226,6 +226,15 @@ function RendererSettings() {
 function OtherSettings() {
   return <>
     <div className="divider opacity-60 mb-0">Others</div>
+    <button
+      type="button"
+      className="btn btn-soft btn-primary w-full"
+      onClick={() => {
+        downloadLastFlowFile()
+      }}
+    >
+      Download Last Flow File
+    </button>
     <div
       className="btn btn-soft btn-secondary w-full"
       onClick={() => {
