@@ -13,6 +13,8 @@ const currentRenderer = signal<{
   timer: RendererTimer
   dispose: () => void
   canvas: HTMLCanvasElement
+  imageWidth: number
+  imageHeight: number
 }>()
 
 
@@ -48,6 +50,114 @@ springMovementY.on("change", () => shouldRender = true)
 springMovementH.on("change", () => shouldRender = true)
 
 
+// video recording
+
+// While set, the render loop ignores the mouse and draws every frame using
+// this camera path (x, y, h all in -1 ~ 1).
+let recordingPath: ((progress: number) => [number, number, number]) | null = null
+let recordingStart = 0
+let recordingDuration = 0
+
+function pickVideoMimeType() {
+  const candidates = [
+    "video/mp4;codecs=avc1.640028",
+    "video/mp4;codecs=avc1.42E01E",
+    "video/mp4;codecs=avc1",
+    "video/mp4",
+    "video/webm;codecs=vp9",
+    "video/webm",
+  ]
+  return candidates.find(type => MediaRecorder.isTypeSupported(type))
+}
+
+export interface RecordOptions {
+  /** length of the loop in seconds */
+  duration?: number
+  fps?: number
+  /** how far the camera moves, 0 ~ 1 */
+  amplitude?: number
+  videoBitsPerSecond?: number
+  /** longest side of the video in pixels (original size is used if smaller) */
+  maxSize?: number
+}
+
+/**
+ * Records one seamless camera loop (a circle) of the current effect and
+ * downloads it. Resolves with the file extension used ("mp4" when the browser
+ * can encode it, otherwise "webm").
+ */
+export async function recordVideo(options: RecordOptions = {}) {
+  const { duration = 5, fps = 30, amplitude = 0.8, videoBitsPerSecond = 12_000_000, maxSize = 1920 } = options
+  const renderer = currentRenderer.value
+  if (!renderer)
+    throw new Error("No effect loaded yet")
+  if (recordingPath)
+    throw new Error("Already recording")
+  if (typeof MediaRecorder === "undefined")
+    throw new Error("This browser does not support video recording")
+
+  const mimeType = pickVideoMimeType()
+  if (!mimeType)
+    throw new Error("No supported video format found")
+  const extension = mimeType.startsWith("video/mp4") ? "mp4" : "webm"
+
+  // Make the canvas match the original image's aspect ratio (not the window's)
+  // so the video isn't cropped. The renderer sizes the canvas from its CSS size
+  // times the device pixel ratio, so set the CSS size such that the video comes
+  // out at the original resolution (long side capped at maxSize), and use a CSS
+  // transform (which doesn't affect that size) to keep it visible on screen.
+  const canvas = renderer.canvas
+  const pixelRatio = canvas.width / (canvas.clientWidth || canvas.width) || 1
+  const scale = Math.min(1, maxSize / Math.max(renderer.imageWidth, renderer.imageHeight))
+  const cssWidth = Math.round(renderer.imageWidth * scale / pixelRatio)
+  const cssHeight = Math.round(renderer.imageHeight * scale / pixelRatio)
+  const fit = Math.min(1, window.innerWidth * 0.9 / cssWidth, window.innerHeight * 0.9 / cssHeight)
+  const previousStyle = canvas.style.cssText
+  canvas.style.cssText = [
+    "position:absolute", "left:50%", "top:50%",
+    `width:${cssWidth}px`, `height:${cssHeight}px`,
+    `transform:translate(-50%,-50%) scale(${fit})`,
+  ].join(";")
+  shouldRender = true
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+  const stream = canvas.captureStream(fps)
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond })
+  const chunks: Blob[] = []
+  recorder.ondataavailable = e => {
+    if (e.data.size > 0) chunks.push(e.data)
+  }
+  const stopped = new Promise<void>(resolve => { recorder.onstop = () => resolve() })
+
+  recordingDuration = duration * 1000
+  recordingStart = performance.now()
+  recordingPath = progress => {
+    const angle = progress * Math.PI * 2
+    return [Math.cos(angle) * amplitude, Math.sin(angle) * amplitude, 0]
+  }
+  shouldRender = true
+
+  recorder.start()
+  await new Promise(resolve => setTimeout(resolve, recordingDuration))
+  recorder.stop()
+  await stopped
+  stream.getTracks().forEach(track => track.stop())
+
+  recordingPath = null
+  canvas.style.cssText = previousStyle
+  shouldRender = true
+
+  const blob = new Blob(chunks, { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = `depth-flow.${extension}`
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  return extension
+}
+
+
 // components
 
 function RendererContent({ renderer }: { renderer: typeof currentRenderer.value }) {
@@ -74,13 +184,22 @@ function RendererContent({ renderer }: { renderer: typeof currentRenderer.value 
       animationFrame = requestAnimationFrame(frame)
       timer.poll()
 
-      if (!shouldRender) return
+      if (!shouldRender && !recordingPath) return
       shouldRender = false
+
+      let mx = springMovementX.get()
+      let my = springMovementY.get()
+      let mh = springMovementH.get()
+      if (recordingPath) {
+        const progress = ((performance.now() - recordingStart) / recordingDuration) % 1
+        ;[mx, my, mh] = recordingPath(progress)
+      }
+
       render({
         origin: [
-          defaultOrigin[0] - springMovementX.get(),
-          defaultOrigin[1] + springMovementY.get(),
-          30 / ((30 / defaultOrigin[2]) + springMovementH.get()),
+          defaultOrigin[0] - mx,
+          defaultOrigin[1] + my,
+          30 / ((30 / defaultOrigin[2]) + mh),
         ],
         target: defaultTarget,
         zoomScale: defaultZoomScale,

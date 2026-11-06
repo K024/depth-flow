@@ -1,5 +1,5 @@
 import clsx from "clsx"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { motion } from "motion/react"
 import { signal } from "@preact/signals-react"
 import { useDropzone } from "react-dropzone"
@@ -9,7 +9,7 @@ import { createFlowSimpleRenderer, flowSimpleRendererPresets } from "../depth-fl
 import type { FlowSimpleRendererPreset } from "../depth-flow/renderer/simple"
 import { createFlowSlideRenderer } from "../depth-flow/renderer/slide"
 import { loadFlowZip } from "../depth-flow/flow-file"
-import { setRenderer } from "../Canvas/Renderer"
+import { recordVideo, setRenderer } from "../Canvas/Renderer"
 import { clearCache, getCachedFile, saveCachedFile } from "../depth-flow/file-cache"
 
 
@@ -66,6 +66,8 @@ const {
     timer: renderer.timer,
     dispose: renderer.dispose,
     canvas,
+    imageWidth: flow.width,
+    imageHeight: flow.height,
   })
 
   return renderer
@@ -134,6 +136,31 @@ const getSharedFlowUrlFromSearchParams = () => {
 
 const sharedFlowUrl = getSharedFlowUrlFromSearchParams()
 
+function RecordButton() {
+  const [recording, setRecording] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  return <>
+    <div
+      className={clsx("btn btn-primary w-full", recording && "btn-disabled")}
+      onClick={async () => {
+        setError(null)
+        setRecording(true)
+        try {
+          await recordVideo({ duration: 5, fps: 30 })
+        } catch (e) {
+          setError((e as Error).message)
+        } finally {
+          setRecording(false)
+        }
+      }}
+    >
+      {recording ? "Recording 5s loop..." : "Download MP4 video"}
+    </div>
+    {error && <div className="alert alert-soft alert-error">{error}</div>}
+  </>
+}
+
 function CreateFlowRenderer() {
   const rendererValue = renderer.useValue()
   const isCreatingRenderer = creatingRenderer.useValue()
@@ -181,6 +208,7 @@ function CreateFlowRenderer() {
         <br />
         Move your mouse around and zoom in/out with the mouse wheel to see the flow effect.
       </div>
+      <RecordButton />
       <div
         className="btn btn-soft btn-primary w-full"
         onClick={reset}
